@@ -274,6 +274,7 @@
       wasExposed: false,
       hadCollapse: false,
       blackmailRisk: false,
+      pendingConfrontation: false,
     };
   }
 
@@ -294,6 +295,8 @@
         partnerName: chars.partner.name,
         affairName: chars.temptation.name,
         children: 0,
+        isPregnant: false,
+        pregnancyDueYear: null,
       },
       job: {
         title: 'ללא עבודה',
@@ -327,6 +330,8 @@
       currentEnding: null,
       actionsThisYear: 0,
       incomingReason: '',
+      actionQueue: [],
+      processingActionQueue: false,
     };
 
     if (perkId) {
@@ -340,12 +345,23 @@
     return fresh;
   }
 
+  function hasPartnerFromFlags(flags) {
+    return Boolean(flags?.isDating || flags?.isMarried);
+  }
+
   function hasPartner() {
-    return state.flags.isDating || state.flags.isMarried;
+    return hasPartnerFromFlags(state.flags);
   }
 
   function hasPartnerState(s) {
-    return s.flags.isDating || s.flags.isMarried;
+    return hasPartnerFromFlags(s.flags);
+  }
+
+  function getPartnerNameForDisplay(s = state) {
+    if (hasPartnerState(s)) {
+      return s.relationship?.partnerName || s.characters?.partner?.name || 'קשר קיים';
+    }
+    return 'אין קשר קבוע';
   }
 
   function relationshipStatus() {
@@ -506,9 +522,16 @@
         return null;
       }
       clampAllStats(parsed.stats);
+      parsed.flags = { ...defaultFlags(), ...parsed.flags };
       parsed.settings = parsed.settings || { theme: meta.settings.theme, speed: meta.settings.speed };
       parsed.activeTab = TAB_ORDER.includes(parsed.activeTab) ? parsed.activeTab : 'life';
-      parsed.relationship = parsed.relationship || { partnerName: parsed.characters?.partner?.name || 'מאיה', affairName: parsed.characters?.temptation?.name || 'נועם', children: 0 };
+      parsed.relationship = {
+        partnerName: parsed.relationship?.partnerName || parsed.characters?.partner?.name || 'מאיה',
+        affairName: parsed.relationship?.affairName || parsed.characters?.temptation?.name || 'נועם',
+        children: Number.isFinite(parsed.relationship?.children) ? parsed.relationship.children : 0,
+        isPregnant: Boolean(parsed.relationship?.isPregnant),
+        pregnancyDueYear: Number.isFinite(parsed.relationship?.pregnancyDueYear) ? parsed.relationship.pregnancyDueYear : null,
+      };
       parsed.hidden = parsed.hidden || { suspicion: 0, scandalRisk: 12 };
       parsed.delayed = Array.isArray(parsed.delayed) ? parsed.delayed : [];
       parsed.eventQueue = Array.isArray(parsed.eventQueue) ? parsed.eventQueue : [];
@@ -521,6 +544,9 @@
       parsed.job = parsed.job || { title: 'ללא עבודה', salary: 0, level: 0 };
       parsed.business = parsed.business || { open: false, employees: 0, partnerName: parsed.characters?.business?.name || 'אור', brand: 'סטודיו קטן' };
       parsed.actionsThisYear = Number.isFinite(parsed.actionsThisYear) ? parsed.actionsThisYear : 0;
+      parsed.actionQueue = Array.isArray(parsed.actionQueue) ? parsed.actionQueue : [];
+      parsed.processingActionQueue = false;
+      parsed.incomingReason = parsed.incomingReason || '';
 
       if (!parsed.characters || !parsed.characters.partner || !parsed.characters.temptation || !parsed.characters.business || !parsed.characters.family) {
         parsed.characters = generateCharacters();
@@ -623,14 +649,26 @@
     }
 
     if (state.currentEvent) {
-      const minor = actionResult('קודם נסיים את האירוע הפתוח.', { stress: 1, energy: -1 }, 'כי הראש כבר עמוס');
-      handleResult(minor, 'פעולה בזמן אירוע', false);
+      state.actionQueue.push(id);
+      toast('הפעולה נוספה לתור');
+      addJournal(`הפעולה "${findActionLabel(id)}" נוספה לתור בזמן אירוע.`);
+      if (lockChoice) {
+        processActionQueue();
+      }
+      renderAll();
+      saveRun();
       return;
     }
 
+    executeActionNow(id, false);
+    renderAll();
+    saveRun();
+  }
+
+  function executeActionNow(id, fromQueue) {
     const result = runActionLogic(id);
     if (!result) {
-      return;
+      return false;
     }
 
     state.actionsThisYear += 1;
@@ -640,13 +678,28 @@
       result.why = result.why || 'כי דחפת יותר מדי פעולות השנה';
     }
 
-    const actionLabel = findActionLabel(id);
+    const actionLabel = `${findActionLabel(id)}${fromQueue ? ' (מהתור)' : ''}`;
     handleResult(result, actionLabel, false);
 
     driftAfterAction();
     checkAchievements();
     checkEndings('action');
+    return true;
+  }
 
+  function processActionQueue() {
+    if (!state.actionQueue.length || state.processingActionQueue || state.gameOver) {
+      return;
+    }
+
+    state.processingActionQueue = true;
+
+    while (state.actionQueue.length && !state.gameOver) {
+      const nextActionId = state.actionQueue.shift();
+      executeActionNow(nextActionId, true);
+    }
+
+    state.processingActionQueue = false;
     renderAll();
     saveRun();
   }
@@ -750,45 +803,52 @@
       case 'love_move_together': {
         const score = partner.trust + partner.commitment + state.stats.relationship - partner.jealousy;
         if (!hasPartner()) {
-          return actionResult('ניסית להציע מגורים משותפים מוקדם מדי.', { trust: -4, stress: 4, happiness: -2 }, 'כי זה היה מהיר בלי בסיס');
+          markRelationshipConfrontation('דחפת מגורים משותפים בלי בסיס', 9);
+          return actionResult('הצעת לגור יחד בלי קשר יציב. זה לא התקבל טוב.', { trust: -6, stress: 6, happiness: -3, exposure: 2 }, 'כי זה הרגיש מהיר מדי');
         }
         if (score > 150) {
           state.flags.livingTogether = true;
           return actionResult('החלטתם לעבור לגור יחד.', { relationship: 10, family: 8, stress: 3, money: -9000, happiness: 6 }, 'כי שניכם רציתם יותר קרבה');
         }
+        markRelationshipConfrontation('הצעת מגורים משותפים בזמן לא נכון', 7);
         partner.jealousy = clamp(partner.jealousy + 6, 0, 100);
         return actionResult('ההצעה פגשה היסוס. עדיין לא הזמן.', { relationship: -4, stress: 6, trust: -5 }, 'כי חוסר ביטחון היה באוויר');
       }
       case 'love_marry': {
         const score = partner.trust + partner.commitment + state.stats.family + state.stats.relationship;
         if (!hasPartner()) {
-          return actionResult('הצעת נישואין בלי קשר יציב. זה הרגיש לא קשור.', { stress: 5, trust: -3, happiness: -2 }, 'כי זה מוקדם מדי');
+          markRelationshipConfrontation('הצעת נישואין בלי קשר יציב', 10);
+          return actionResult('הצעת נישואין מוקדם מדי. זה יצר מתח מיידי.', { stress: 7, trust: -5, happiness: -3, exposure: 2 }, 'כי בלי בסיס זה מרגיש כמו לחץ');
         }
         if (score > 230 && state.stats.money > 15000) {
           state.flags.isDating = true;
           state.flags.isMarried = true;
           return actionResult('הצעת נישואין ונענית בחיוב.', { relationship: 12, family: 12, trust: 6, money: -18000, happiness: 10 }, 'כי נוצר ביטחון להמשך');
         }
+        markRelationshipConfrontation('הצעת נישואין נדחתה', 9);
         partner.anger = clamp(partner.anger + 8, 0, 100);
         return actionResult('ההצעה נדחתה כרגע.', { relationship: -8, stress: 8, trust: -7, happiness: -5 }, 'כי הפערים עדיין גדולים');
       }
       case 'love_intimacy': {
         const desireScore = partner.desire + partner.trust + state.stats.relationship - partner.anger;
         if (!hasPartner() && !state.flags.affairActive) {
-          return actionResult('ניסית ליזום קרבה בלי חיבור יציב. זה היה מביך.', { trust: -5, stress: 6, happiness: -3 }, 'כי לא נבנה אמון מראש');
+          markRelationshipConfrontation('ניסיון אינטימיות בלי אמון', 8);
+          return actionResult('ניסית ליזום אינטימיות בלי בסיס רגשי. זה לא התקבל טוב.', { trust: -7, stress: 7, happiness: -3, exposure: 2 }, 'כי בלי אמון זה מרגיש לא בטוח');
         }
         if (desireScore >= 150) {
           const bonusSuspicion = state.flags.isMarried ? 8 : 2;
           adjustSuspicion(bonusSuspicion, 'רגע אינטימי חזק');
           return actionResult('המרחק ביניכם הצטמצם. זה הרגיש קרוב מאוד.', { relationship: 8, happiness: 7, stress: -8, exposure: 4, trust: 3 }, 'כי היה חיבור הדדי ברור');
         }
+        markRelationshipConfrontation('יוזמת קרבה בזמן רגיש', 7);
         partner.trust = clamp(partner.trust - 6, 0, 100);
         partner.anger = clamp(partner.anger + 5, 0, 100);
         return actionResult('זה הרגיש קרוב מדי ולא במקום.', { relationship: -6, trust: -8, stress: 8, happiness: -4 }, 'כי לא הייתה התאמה באותו רגע');
       }
       case 'love_open': {
         if (!hasPartner()) {
-          return actionResult('ניסית לדבר על קשר פתוח בלי קשר קיים. זה הלך לאיבוד.', { stress: 3, trust: -2 }, 'כי אין בסיס לשיחה הזאת');
+          markRelationshipConfrontation('שיחה על קשר פתוח בלי קשר יציב', 8);
+          return actionResult('הצעת קשר פתוח בלי בסיס. זה יצר בלגן רגשי.', { stress: 5, trust: -4, exposure: 2 }, 'כי שיחה כזאת דורשת ביטחון גבוה');
         }
         const openScore = partner.openness + partner.trust - partner.jealousy + state.stats.relationship;
         if (openScore > 140) {
@@ -796,24 +856,28 @@
           adjustSuspicion(6, 'נפתחו גבולות בקשר');
           return actionResult('פתחתם את הקשר בהסכמה. זה מרגש אבל עדין.', { relationship: 3, exposure: 8, stress: 4, trust: 1 }, 'כי שינוי גבולות מושך תשומת לב');
         }
+        markRelationshipConfrontation('הצעה לקשר פתוח נדחתה', 10);
         partner.jealousy = clamp(partner.jealousy + 10, 0, 100);
         return actionResult('הצעה לקשר פתוח יצרה ריחוק מיידי.', { relationship: -10, trust: -10, stress: 10 }, 'כי הפער בציפיות היה גדול');
       }
       case 'love_threesome': {
         if (!hasPartner()) {
-          return actionResult('הצעה כזאת בלי קשר יציב הרגישה מנותקת מהמצב.', { trust: -3, stress: 4 }, 'כי זה מוקדם מדי');
+          markRelationshipConfrontation('הצעה חריגה בלי קשר יציב', 11);
+          return actionResult('הצעת שלישייה בלי בסיס. זה לא התקבל טוב.', { trust: -6, stress: 7, exposure: 4, relationship: -4 }, 'כי זה מהלך רגיש מאוד');
         }
         const consentScore = partner.openness + partner.desire - partner.jealousy + partner.trust;
         if (consentScore > 170 && state.flags.openRelationship) {
           adjustSuspicion(12, 'מהלך אמיץ מדי');
           return actionResult('היה רגע טעון מאוד. משהו השתנה ביניכם.', { relationship: 6, happiness: 6, exposure: 12, stress: 7 }, 'כי זה מהלך עם מחיר חברתי');
         }
+        markRelationshipConfrontation('הצעת שלישייה נדחתה', 12);
         partner.anger = clamp(partner.anger + 14, 0, 100);
         return actionResult('ההצעה התקבלה קשה מאוד.', { relationship: -14, trust: -12, stress: 12, happiness: -6 }, 'כי זה חצה גבול לצד השני');
       }
       case 'love_affair_start': {
         if (!hasPartner()) {
-          return actionResult(`ניסית להתחיל רומן עם ${temptation.name}, אבל אין כרגע קשר רשמי להסתבך ממנו.`, { exposure: 5, stress: 3, happiness: 2 }, 'כי זה נשאר פלירטוט בלי עומק');
+          markRelationshipConfrontation('פלירטוט אגרסיבי בלי קשר יציב', 6);
+          return actionResult(`ניסית להתחיל רומן עם ${temptation.name}. זה יצר מתח ורכילות.`, { exposure: 7, stress: 4, happiness: 2, trust: -2 }, 'כי זה משאיר עקבות גם בלי זוגיות רשמית');
         }
         state.flags.affairActive = true;
         state.flags.hadAffair = true;
@@ -823,7 +887,7 @@
       }
       case 'love_affair_end':
         if (!state.flags.affairActive) {
-          return actionResult('אין רומן פעיל לסיים כרגע.', { stress: -1, trust: 1 }, 'כי לפחות נשמר גבול');
+          return actionResult('סגרת דלת לפני שנפתחה. זה הוריד סיכון.', { stress: -2, trust: 2, exposure: -1 }, 'כי מנעת הסתבכות מראש');
         }
         state.flags.affairActive = false;
         adjustSuspicion(-12, 'ניסיון לנקות שולחן');
@@ -845,13 +909,31 @@
       case 'family_ignore':
         return actionResult('בחרת עבודה במקום משפחה. זה נתן זמן עכשיו, אבל השאיר סימן.', { money: 1200, family: -8, trust: -4, stress: 4 }, 'כי ריחוק משפחתי מצטבר עם הזמן', [{ afterYears: 1, effects: { family: -6, happiness: -3 }, text: 'המרחק מהמשפחה חזר אליך השנה.', why: 'כי פצע משפחתי לא נעלם לבד' }]);
       case 'family_try_kid': {
-        const possible = hasPartner() && (state.flags.isMarried || state.flags.livingTogether);
-        const stable = state.stats.money > 25000 && state.stats.relationship >= 45 && state.stats.family >= 45;
-        if (possible && stable && chance(42)) {
-          state.relationship.children += 1;
-          return actionResult('הצטרף ילד למשפחה. השמחה גדולה וגם האחריות.', { family: 16, happiness: 10, stress: 9, energy: -8, money: -12000 }, 'כי ילד משנה את כל הקצב');
+        if (state.relationship.isPregnant) {
+          return actionResult('כבר יש הריון פעיל. הנושא רגיש עכשיו.', { stress: 4, family: 2, relationship: -2 }, 'כי יש עומס רגשי וכלכלי');
         }
-        return actionResult('ניסיתם, אבל זה לא היה הזמן הנכון או התנאים לא הספיקו.', { stress: 6, family: -2, trust: -1, happiness: -2 }, 'כי צריך יציבות כדי שזה יעבוד');
+
+        const hasStablePartner = hasPartner() && (state.flags.isMarried || state.flags.livingTogether);
+        const readinessScore =
+          (hasStablePartner ? 35 : 0) +
+          Math.max(0, state.stats.relationship - 35) +
+          Math.max(0, state.stats.trust - 35) +
+          Math.max(0, state.stats.health - 45) +
+          (state.stats.money > 25000 ? 20 : 0) -
+          Math.max(0, state.stats.stress - 60);
+
+        const successChance = clamp(Math.floor(readinessScore / 2), 8, 78);
+
+        if (chance(successChance)) {
+          startPregnancy();
+          return actionResult('נכנסתם להריון. שמחה ולחץ ביחד.', { family: 10, relationship: 6, happiness: 8, stress: 8, energy: -4, money: -3500 }, 'כי התחלה של הורות תמיד משנה קצב');
+        }
+
+        markRelationshipConfrontation('ניסיון להביא ילד בזמן רגיש', hasStablePartner ? 7 : 10);
+        if (hasStablePartner) {
+          return actionResult('ניסיתם להביא ילד, וזה הפך לנושא נפיץ בבית.', { stress: 9, relationship: -6, trust: -4, family: -5 }, 'כי הלחץ היה גבוה מדי לתזמון הזה');
+        }
+        return actionResult('ניסית להביא ילד בלי יציבות זוגית. זה פתח קונפליקט.', { stress: 10, relationship: -7, trust: -6, family: -6, exposure: 3 }, 'כי בלי בסיס זה מייצר חיכוך חזק');
       }
       case 'family_time_kids':
         if (state.relationship.children <= 0) {
@@ -988,6 +1070,28 @@
     }
   }
 
+  function startPregnancy() {
+    state.relationship.isPregnant = true;
+    state.relationship.pregnancyDueYear = state.yearCount + 1;
+    state.delayed.push({
+      afterYears: 1,
+      effects: {
+        children: 1,
+        family: 12,
+        happiness: 8,
+        stress: 9,
+        energy: -8,
+        money: -14000,
+      },
+      text: 'הלידה הגיעה. הבית גדל בילד חדש.',
+      why: 'כי הורות מביאה שמחה יחד עם עומס',
+      setRelationship: {
+        isPregnant: false,
+        pregnancyDueYear: null,
+      },
+    });
+  }
+
   function buyAsset(kind) {
     const template = ASSET_CATALOG[kind];
     if (!template) {
@@ -1039,6 +1143,19 @@
     if (delta > 0 && chance(30)) {
       addJournal(`החשד עולה: ${reason}`);
     }
+  }
+
+  function markRelationshipConfrontation(reason, intensity = 8) {
+    if (!hasPartner()) {
+      adjustSuspicion(Math.max(1, Math.floor(intensity / 4)), reason);
+      return;
+    }
+    state.flags.pendingConfrontation = true;
+    state.incomingReason = reason;
+    const partner = state.characters.partner;
+    partner.anger = clamp(partner.anger + intensity, 0, 100);
+    partner.jealousy = clamp(partner.jealousy + Math.max(3, Math.floor(intensity / 2)), 0, 100);
+    adjustSuspicion(Math.max(2, Math.floor(intensity / 3)), reason);
   }
 
   function pickWeightedCategory(poolMode = 'mixed') {
@@ -1417,6 +1534,32 @@
     const familyMember = state.characters.family;
 
     if (hasPartner()) {
+      if (state.flags.pendingConfrontation) {
+        state.flags.pendingConfrontation = false;
+        const reasonText = state.incomingReason || 'משהו יושב ביניכם כבר כמה ימים';
+        state.incomingReason = '';
+        return {
+          id: 'incoming_forced_confront',
+          title: 'עימות זוגי',
+          text: `${partner.name} אומר/ת: "${reasonText}".`,
+          category: 'love',
+          choices: [
+            {
+              label: 'לדבר פתוח',
+              resolve: () => ({ text: 'ניהלתם שיחה קשה אבל כנה.', effects: { trust: 3, relationship: 2, stress: -3 }, why: 'כי תקשורת ברורה מרגיעה אש' }),
+            },
+            {
+              label: 'להתגונן',
+              resolve: () => ({ text: 'הטון עלה והשיחה הסתבכה.', effects: { trust: -6, relationship: -5, stress: 8, exposure: 2 }, why: 'כי הגנה אגרסיבית מרחיקה' }),
+            },
+            {
+              label: 'לברוח מהשיחה',
+              resolve: () => ({ text: 'הנושא נשאר פתוח וכבד.', effects: { trust: -4, stress: 5, family: -3 }, why: 'כי דחייה משאירה מתח' }),
+            },
+          ],
+        };
+      }
+
       if (partner.suspicion >= 70 || state.hidden.suspicion >= 72) {
         events.push({
           id: 'incoming_confront',
@@ -1521,6 +1664,12 @@
       item.afterYears -= 1;
       if (item.afterYears <= 0) {
         const chips = applyEffects(item.effects || {});
+        if (item.setFlags && typeof item.setFlags === 'object') {
+          Object.assign(state.flags, item.setFlags);
+        }
+        if (item.setRelationship && typeof item.setRelationship === 'object') {
+          Object.assign(state.relationship, item.setRelationship);
+        }
         if (item.text) {
           notes.push(item.text);
           addJournal(item.text);
@@ -1556,6 +1705,11 @@
       adjustSuspicion(8, 'רומן פעיל לאורך שנה');
     }
 
+    if (state.flags.affairActive && state.relationship.children > 0) {
+      adjustSuspicion(10, 'רומן פעיל כשיש ילדים בבית');
+      state.flags.blackmailRisk = chance(28) ? true : state.flags.blackmailRisk;
+    }
+
     if (state.stats.exposure > 70) {
       adjustSuspicion(5, 'חשיפה גבוהה לאורך שנה');
     }
@@ -1578,6 +1732,14 @@
     lockChoice = true;
     const result = choice.resolve();
     handleResult(result, `${state.currentEvent.title}: ${choice.label}`, true);
+    processActionQueue();
+
+    if (state.gameOver) {
+      dom.nextEventBtn.hidden = true;
+      renderAll();
+      saveRun();
+      return;
+    }
 
     dom.nextEventBtn.hidden = false;
     renderAll();
@@ -1714,7 +1876,7 @@
       endMoney: state.stats.money,
       work: finance.workLine,
       love: `סטטוס: ${relationshipStatus()}${state.flags.affairActive ? ' | רומן פעיל' : ''}`,
-      family: `משפחה: ${state.stats.family} | ילדים: ${state.relationship.children}`,
+      family: `משפחה: ${state.stats.family} | ילדים: ${state.relationship.children}${state.relationship.isPregnant ? ' | הריון פעיל' : ''}`,
       health: `בריאות: ${snapshot.health} → ${state.stats.health} | לחץ: ${snapshot.stress} → ${state.stats.stress}`,
       highlights: state.yearHighlights.slice(0, 3),
     };
@@ -1797,8 +1959,25 @@
     income += assetIncome;
     costs += assetMaintenance;
 
-    const familyCost = 12000 + state.relationship.children * 9000 + (state.flags.isMarried ? 5000 : 0);
+    const baseFamilyMonthly = hasPartner() ? 1300 : 800;
+    const childMonthly = 1700 * state.relationship.children;
+    const pregnancyMonthly = state.relationship.isPregnant ? 950 : 0;
+    const familyCost = (baseFamilyMonthly + childMonthly + pregnancyMonthly) * 12;
     costs += familyCost;
+
+    if (state.relationship.children > 0) {
+      const childLoad = Math.min(14, 3 + state.relationship.children * 2);
+      applyEffects({
+        stress: childLoad,
+        energy: -Math.min(12, 2 + state.relationship.children * 2),
+        family: Math.min(10, 3 + state.relationship.children),
+      });
+    }
+
+    if (state.relationship.isPregnant) {
+      applyEffects({ stress: 5, energy: -4, family: 4, happiness: 2 });
+      addJournal('ההריון הוסיף עומס והוצאות השנה.');
+    }
 
     if (state.debts > 0) {
       const interest = Math.round(state.debts * 0.14);
@@ -1848,7 +2027,7 @@
     dom.speedSelect.value = state.settings.speed;
 
     dom.ageYearLine.textContent = `גיל: ${state.age} | שנה: ${state.yearCount}`;
-    dom.queueIndicator.textContent = `אירועי השנה: ${state.currentEvent ? state.eventQueue.length + 1 : 0}`;
+    dom.queueIndicator.textContent = `אירועי השנה: ${state.currentEvent ? state.eventQueue.length + 1 : 0} | פעולות בתור: ${state.actionQueue.length}`;
     dom.relationshipIndicator.textContent = `סטטוס אהבה: ${relationshipStatus()}${state.flags.affairActive ? ' | רומן פעיל' : ''}`;
     dom.jobIndicator.textContent = `עבודה: ${state.job.title}`;
 
@@ -1964,7 +2143,6 @@
   }
 
   function getTabSummary(tab) {
-    const partnerName = state.relationship.partnerName;
     const assetsCount = state.assets.length;
     switch (tab) {
       case 'life':
@@ -1982,13 +2160,13 @@
       case 'love':
         return [
           `סטטוס: ${relationshipStatus()}`,
-          `בן/בת זוג: ${hasPartner() ? partnerName : 'אין קשר קבוע'}`,
+          `בן/בת זוג: ${getPartnerNameForDisplay()}`,
           `רומן פעיל: ${state.flags.affairActive ? 'כן' : 'לא'}`,
         ];
       case 'family':
         return [
           `משפחה: ${state.stats.family}`,
-          `ילדים: ${state.relationship.children}`,
+          `ילדים: ${state.relationship.children}${state.relationship.isPregnant ? ' | הריון פעיל' : ''}`,
           `קרוב/ת משפחה מרכזי/ת: ${state.characters.family.name}`,
         ];
       case 'assets':
