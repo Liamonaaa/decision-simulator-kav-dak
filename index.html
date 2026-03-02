@@ -11,195 +11,113 @@
     <header class="topbar" aria-label="סרגל עליון">
       <div class="title-wrap">
         <h1>סימולטור החלטות: קו דק</h1>
-        <p id="timeIndicator" class="meta-line">שבוע 1, חודש 1</p>
+        <p id="ageYearLine" class="meta-line">גיל: 18 | שנה: 1</p>
       </div>
 
       <div class="top-actions" aria-label="פעולות עליונות">
-        <button id="newGameBtn" class="btn btn-main">התחל חדש</button>
-        <button id="continueBtn" class="btn">המשך</button>
-        <button id="freeModeBtn" class="btn" hidden>המשך חופשי+</button>
-        <button id="helpBtn" class="btn">עזרה</button>
-        <button id="themeBtn" class="btn">מצב: כהה</button>
+        <button id="newGameBtn" class="btn btn-main" aria-label="התחל משחק חדש">התחל חדש</button>
+        <button id="continueBtn" class="btn" aria-label="המשך משחק שמור">המשך</button>
+        <button id="helpBtn" class="btn" aria-label="עזרה">עזרה</button>
+        <button id="themeBtn" class="btn" aria-label="החלפת ערכת צבע">מצב: כהה</button>
+      </div>
+
+      <div class="settings-row">
+        <label for="speedSelect">מהירות שנה</label>
+        <select id="speedSelect" aria-label="מספר אירועים לשנה">
+          <option value="slow">איטי (3 אירועים)</option>
+          <option value="normal">רגיל (5 אירועים)</option>
+          <option value="crazy">מטורף (8 אירועים)</option>
+        </select>
       </div>
 
       <div class="status-row" aria-live="polite">
-        <span id="weekIndicator">שבוע 1/120</span>
-        <span id="seasonIndicator">עונה 1/4</span>
-        <span id="apIndicator">נק׳ פעולה: 3/3</span>
+        <span id="queueIndicator">אירועי השנה: 0</span>
+        <span id="relationshipIndicator">סטטוס אהבה: רווק/ה</span>
+        <span id="jobIndicator">עבודה: ללא עבודה</span>
       </div>
     </header>
 
     <main class="main-area">
-      <section id="storyTab" class="tab-panel" data-tab="story">
-        <article id="homeCard" class="card home-card">
-          <h2>זה משחק חיים ארוך</h2>
-          <p>עסק, עבודה, בית, קשרים וכסף. הכול מחובר.</p>
-          <p>כל שבוע יש 3 פעולות. אחר כך סוגרים שבוע.</p>
-
-          <h3>בחר 2 תכונות אופי</h3>
-          <p id="traitCount" class="small strong">נבחרו 0/2</p>
-          <div id="traitsBox" class="chip-grid">
-            <button class="chip-btn" data-trait="impulsive">אימפולסיבי</button>
-            <button class="chip-btn" data-trait="calculated">מחושב</button>
-            <button class="chip-btn" data-trait="romantic">רומנטי</button>
-            <button class="chip-btn" data-trait="cold">קר</button>
-            <button class="chip-btn" data-trait="ambitious">שאפתן</button>
-            <button class="chip-btn" data-trait="loyal">נאמן</button>
-          </div>
-
-          <div class="home-actions">
-            <button id="homeNewBtn" class="btn btn-main">התחל משחק חדש</button>
-            <button id="homeContinueBtn" class="btn">המשך משחק שמור</button>
-            <button id="homeFreeBtn" class="btn" hidden>המשך חופשי+</button>
-          </div>
-        </article>
-
-        <article id="weekCard" class="card" hidden>
-          <h2 id="situationTitle">מצב השבוע</h2>
-          <div id="situationText" class="text-lines"></div>
-          <ul id="situationBullets" class="bullets"></ul>
-          <div id="situationChoices" class="choices" aria-label="תגובה למצב השבוע"></div>
-
-          <h3 class="subhead">מה עשית השבוע</h3>
-          <ul id="weekActionLog" class="list plain"></ul>
-
-          <div class="inline-actions">
-            <button id="finishWeekBtn" class="btn btn-main">סיים שבוע</button>
-          </div>
-        </article>
-
-        <article id="statusCard" class="card" hidden>
-          <h3>מצב עכשיו</h3>
-          <div id="moneyLine" class="value-line">כסף: ₪0</div>
-          <div id="assetsLine" class="value-line">נכסים: ₪0</div>
-          <div id="debtsLine" class="value-line">חובות: ₪0</div>
-          <div id="statsBars" class="bars"></div>
-        </article>
-
-        <section id="resultCard" class="card" hidden aria-live="polite">
-          <h3>סיכום שבוע</h3>
-          <p id="weeklyMoneyFlow"></p>
-          <p id="weeklyStressFlow"></p>
-          <p id="weeklyRelationsFlow"></p>
-          <p id="weeklyWorkFlow"></p>
-          <p id="weeklyCoupleFlow"></p>
-          <ul id="weeklyMainEvents" class="bullets"></ul>
-          <h4>שינויי מדדים</h4>
-          <div id="weeklyDeltaBox" class="chips"></div>
-          <button id="nextWeekBtn" class="btn btn-main">המשך לשבוע הבא</button>
-        </section>
-
-        <section id="monthSummaryCard" class="card" hidden>
-          <h3>סיכום חודש</h3>
-          <p id="monthSummaryText"></p>
-        </section>
-
-        <section id="endingCard" class="card" hidden>
-          <h2 id="endingTitle"></h2>
-          <p id="endingText"></p>
-          <div class="end-actions">
-            <button id="endingNewBtn" class="btn btn-main">משחק חדש</button>
-            <button id="endingFreeBtn" class="btn" hidden>המשך חופשי+</button>
-          </div>
-        </section>
+      <section class="card main-cta">
+        <button id="advanceYearBtn" class="btn btn-main btn-wide" aria-label="התקדם שנה">התקדם שנה</button>
       </section>
 
-      <section id="actionsTab" class="tab-panel" data-tab="actions" hidden>
-        <article class="card">
-          <h2>פעולות</h2>
-          <p class="small">יש לך 3 נק׳ פעולה בכל שבוע. כל פעולה עולה נקודה.</p>
-          <p id="apHint" class="small strong">נק׳ פעולה זמינות: 3</p>
-          <div id="actionFeedback" class="list"></div>
-        </article>
-
-        <article class="card">
-          <h3>כסף והשקעות</h3>
-          <div id="financialActions" class="choices"></div>
-        </article>
-
-        <article class="card">
-          <h3>עבודה</h3>
-          <div id="workActions" class="choices"></div>
-        </article>
-
-        <article class="card">
-          <h3>קשרים וזוגיות</h3>
-          <div id="relationshipActions" class="choices"></div>
-        </article>
-
-        <article class="card">
-          <h3>מתח אינטימי (מרומז)</h3>
-          <div id="intimacyActions" class="choices"></div>
-        </article>
-
-        <article class="card">
-          <h3>רומן מהצד</h3>
-          <div id="affairActions" class="choices"></div>
-        </article>
-
-        <article class="card">
-          <h3>בריאות וחברה</h3>
-          <div id="lifeActions" class="choices"></div>
-        </article>
+      <section id="homeCard" class="card home-card">
+        <h2>החיים שלך רצים שנה אחרי שנה</h2>
+        <p>כל שנה מביאה כמה אירועים קצרים.</p>
+        <p>אפשר גם ליזום פעולות מכל טאב בכל זמן.</p>
+        <div id="ngpBox" class="ngp-box" hidden>
+          <h3>המשך חזק יותר</h3>
+          <p>בחר בונוס פתיחה אחד למשחק הבא:</p>
+          <div id="perkButtons" class="choices"></div>
+        </div>
       </section>
 
-      <section id="assetsTab" class="tab-panel" data-tab="assets" hidden>
-        <article class="card">
-          <h2>רכוש שלך</h2>
-          <div id="ownedAssetsList" class="list"></div>
-        </article>
-        <article class="card">
-          <h3>פעולות רכוש</h3>
-          <div id="assetActions" class="choices"></div>
-        </article>
+      <section id="statsCard" class="card">
+        <h2>מצב חיים</h2>
+        <div id="moneyLine" class="value-line">כסף: ₪5,000</div>
+        <div id="statsBars" class="bars"></div>
       </section>
 
-      <section id="relationsTab" class="tab-panel" data-tab="relations" hidden>
-        <article class="card">
-          <h2>קשרים</h2>
-          <div id="relationsList" class="list"></div>
-        </article>
-        <article class="card">
-          <h3>מה אנשים זוכרים</h3>
-          <div id="memoryList" class="list"></div>
-        </article>
+      <section id="eventCard" class="card" hidden>
+        <h2 id="eventTitle">אירוע</h2>
+        <p id="eventText"></p>
+        <div id="eventChoices" class="choices"></div>
+        <button id="nextEventBtn" class="btn btn-main" hidden>המשך</button>
       </section>
 
-      <section id="familyTab" class="tab-panel" data-tab="family" hidden>
-        <article class="card">
-          <h2>משפחה</h2>
-          <ul id="familyList" class="list plain"></ul>
-        </article>
+      <section id="consequenceCard" class="card" hidden>
+        <h3>השלכות</h3>
+        <div id="consequenceChips" class="chips"></div>
+        <p id="whyLine" class="small"></p>
       </section>
 
-      <section id="cluesTab" class="tab-panel" data-tab="clues" hidden>
-        <article class="card">
-          <h2>רמזים</h2>
-          <ul id="cluesList" class="list plain"></ul>
-        </article>
+      <section id="yearSummaryCard" class="card" hidden>
+        <h2>סיכום שנה</h2>
+        <p id="yearMoneyFlow"></p>
+        <p id="yearWorkFlow"></p>
+        <p id="yearLoveFlow"></p>
+        <p id="yearFamilyFlow"></p>
+        <p id="yearHealthFlow"></p>
+        <h3>3 אירועים מרכזיים</h3>
+        <ul id="yearHighlights" class="bullets"></ul>
       </section>
 
-      <section id="endingsTab" class="tab-panel" data-tab="endings" hidden>
-        <article class="card">
-          <h2>סיומות שנפתחו</h2>
-          <p id="endingProgress">0/20</p>
-          <div id="endingsGrid" class="end-grid"></div>
-        </article>
-        <article class="card">
-          <h3>הישגים</h3>
-          <div id="achievementsGrid" class="end-grid"></div>
-        </article>
+      <section id="tabCard" class="card">
+        <h2 id="tabTitle">חיים</h2>
+        <ul id="tabSummary" class="bullets"></ul>
+        <div id="tabActions" class="choices"></div>
+      </section>
+
+      <section id="journalCard" class="card" hidden>
+        <h2>יומן</h2>
+        <div id="journalList" class="list"></div>
+      </section>
+
+      <section id="endingCollectionCard" class="card" hidden>
+        <h2>סיומות</h2>
+        <p id="endingProgress"></p>
+        <div id="endingGrid" class="end-grid"></div>
+      </section>
+
+      <section id="endingCard" class="card" hidden>
+        <h2 id="endingTitle"></h2>
+        <p id="endingText"></p>
+        <button id="endingNewGameBtn" class="btn btn-main">משחק חדש</button>
       </section>
     </main>
 
     <nav class="bottom-nav" aria-label="ניווט תחתון">
-      <button class="tab-btn active" data-tab-btn="story">סיפור</button>
-      <button class="tab-btn" data-tab-btn="actions">פעולות</button>
-      <button class="tab-btn" data-tab-btn="assets">רכוש</button>
-      <button class="tab-btn" data-tab-btn="relations">קשרים</button>
-      <button class="tab-btn" data-tab-btn="family">משפחה</button>
-      <button class="tab-btn" data-tab-btn="clues">רמזים</button>
-      <button class="tab-btn" data-tab-btn="endings">סיומות</button>
+      <button class="tab-btn active" data-tab="life">חיים</button>
+      <button class="tab-btn" data-tab="work">עבודה</button>
+      <button class="tab-btn" data-tab="love">אהבה</button>
+      <button class="tab-btn" data-tab="family">משפחה</button>
+      <button class="tab-btn" data-tab="assets">נכסים</button>
+      <button class="tab-btn" data-tab="health">בריאות</button>
+      <button class="tab-btn" data-tab="education">לימודים</button>
+      <button class="tab-btn" data-tab="business">עסקים</button>
+      <button class="tab-btn" data-tab="investments">השקעות</button>
+      <button class="tab-btn" data-tab="journal">יומן</button>
     </nav>
   </div>
 
@@ -207,15 +125,11 @@
 
   <dialog id="helpDialog" aria-label="עזרה">
     <article class="help-body">
-      <h2>איך זה עובד</h2>
-      <p>כל שבוע יש 3 נק׳ פעולה.</p>
-      <p>אתה עושה פעולות, מגיב למצב השבוע, ואז סוגר שבוע.</p>
-      <p>כל 4 שבועות יש סיכום חודש עם הכנסות והוצאות.</p>
-      <p>מה שבחרת היום חוזר אליך גם בהמשך.</p>
-      <label class="toggle-line" for="simpleLanguageToggle">
-        <input id="simpleLanguageToggle" type="checkbox" checked>
-        שפה פשוטה
-      </label>
+      <h2>איך משחקים</h2>
+      <p>לוחצים "התקדם שנה" ומקבלים סדרת אירועים.</p>
+      <p>בכל זמן אפשר לעבור לטאבים וליזום פעולות.</p>
+      <p>אחרי כל אירוע או פעולה רואים מיד השלכות.</p>
+      <p>סיומות רגילות נפתחות בעיקר מגיל 30 ומעלה, חוץ מקריסה קיצונית.</p>
       <button id="closeHelpBtn" class="btn btn-main">סגור</button>
     </article>
   </dialog>
