@@ -1,0 +1,117 @@
+﻿<!doctype html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>סימולטור החלטות: קו דק</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar" aria-label="סרגל עליון">
+      <div class="title-wrap">
+        <h1>סימולטור החלטות: קו דק</h1>
+        <p id="chapterIndicator" class="chapter">מערכה 1/3</p>
+      </div>
+      <div class="top-controls" aria-label="פעולות ראשיות">
+        <button id="startBtn" class="btn btn-main" aria-label="התחל חדש">התחל חדש</button>
+        <button id="continueBtn" class="btn" aria-label="המשך">המשך</button>
+        <button id="helpBtn" class="btn" aria-label="עזרה">עזרה</button>
+        <button id="themeBtn" class="btn" aria-label="החלפת ערכת נושא">מצב: כהה</button>
+        <button id="muteBtn" class="btn" aria-label="השתקת צליל">צליל: פועל</button>
+      </div>
+      <div class="turn-wrap" aria-live="polite">
+        <span id="turnIndicator">תור 0/16</span>
+      </div>
+    </header>
+
+    <main class="main-layout">
+      <section id="homeScreen" class="panel home-panel" aria-label="מסך פתיחה">
+        <div class="home-card">
+          <h2>המשחק מתחיל כשאין אוויר</h2>
+          <p>עסק קטן. כסף דק. משפחה על סף פיצוץ.</p>
+          <p>וכל קרבה יכולה להפוך ללחץ או למנוף.</p>
+          <div class="home-actions">
+            <button id="startHomeBtn" class="btn btn-main" aria-label="התחלת משחק">התחל ריצה חדשה</button>
+            <button id="continueHomeBtn" class="btn" aria-label="המשך משחק שמור">המשך ריצה שמורה</button>
+          </div>
+        </div>
+
+        <div class="collection-card" aria-label="סיומות שנפתחו">
+          <h3>סיומות שנפתחו</h3>
+          <p id="endingProgress">0/14</p>
+          <div id="endingsGrid" class="endings-grid"></div>
+        </div>
+      </section>
+
+      <section id="gameScreen" class="panel game-panel" hidden aria-label="מסך משחק">
+        <article class="scenario-card" id="scenarioCard">
+          <h2 id="scenarioTitle">-</h2>
+          <div id="scenarioText" class="scenario-text"></div>
+          <ul id="scenarioBullets" class="scenario-bullets"></ul>
+          <div id="choicesContainer" class="choices" aria-label="אפשרויות בחירה"></div>
+        </article>
+
+        <section id="resultBox" class="result-box" hidden aria-live="polite">
+          <h3>תוצאה</h3>
+          <p id="resultText"></p>
+          <ul id="resultReveals" class="reveal-list"></ul>
+          <div id="resultClue" class="result-clue" hidden></div>
+          <div id="deltaChips" class="chips"></div>
+          <button id="nextTurnBtn" class="btn btn-main" aria-label="המשך לתור הבא">המשך</button>
+        </section>
+
+        <section id="endingBox" class="ending-box" hidden aria-live="polite">
+          <h2 id="endingTitle"></h2>
+          <p id="endingSummary"></p>
+          <div class="ending-actions">
+            <button id="restartFromEndBtn" class="btn btn-main" aria-label="התחלת משחק חדש">התחל חדש</button>
+            <button id="backHomeBtn" class="btn" aria-label="חזרה למסך פתיחה">חזרה לפתיחה</button>
+          </div>
+        </section>
+      </section>
+
+      <aside class="panel side-panel" aria-label="מידע חי">
+        <section class="stats-card">
+          <h3>מדדים חיים</h3>
+          <div id="moneyDisplay" class="money-display">כסף: ₪0</div>
+          <div id="statsBars" class="stat-bars"></div>
+        </section>
+
+        <details class="log-card" open>
+          <summary>תיק אירועים</summary>
+          <ul id="historyList" class="history-list"></ul>
+        </details>
+
+        <details class="clues-card" open>
+          <summary>רמזים</summary>
+          <ul id="cluesList" class="clues-list"></ul>
+        </details>
+      </aside>
+    </main>
+  </div>
+
+  <div id="toastContainer" class="toast-container" aria-live="assertive"></div>
+
+  <dialog id="helpModal" aria-label="עזרה">
+    <article class="help-content">
+      <h2>עזרה</h2>
+      <p>כל בחירה משנה כמה מדדים יחד. חלק מהמחיר מגיע מאוחר.</p>
+      <ul>
+        <li><strong>כסף:</strong> יתרה מיידית, יכולה לרדת למינוס.</li>
+        <li><strong>תזרים:</strong> יציבות תשלומים קרובים.</li>
+        <li><strong>תיק השקעות:</strong> עמדת הסיכון והפוטנציאל שלך.</li>
+        <li><strong>אנרגיה:</strong> יכולת להחזיק קצב.</li>
+        <li><strong>לחץ:</strong> עומס מצטבר. גבוה מדי שובר.</li>
+        <li><strong>חשיפה:</strong> סיכוי לדליפה, שמועה או פגיעה תדמיתית.</li>
+        <li><strong>אמינות:</strong> אמון מול שותפים, משפחה ושוק.</li>
+        <li><strong>קרבה:</strong> משיכה והשפעה רגשית. גבוה מדי מסוכן.</li>
+      </ul>
+      <p>השפעות מושהות מופעלות אחרי כמה תורות, גם אם שכחת מה גרם להן.</p>
+      <button id="closeHelpBtn" class="btn btn-main" aria-label="סגירת עזרה">סגור</button>
+    </article>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
