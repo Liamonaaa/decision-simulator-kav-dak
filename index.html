@@ -11,113 +11,123 @@
     <header class="topbar" aria-label="סרגל עליון">
       <div class="title-wrap">
         <h1>סימולטור החלטות: קו דק</h1>
-        <p id="ageYearLine" class="meta-line">גיל: 18 | שנה: 1</p>
+        <p id="timeIndicator" class="meta-line">שבוע 1, חודש 1</p>
       </div>
 
-      <div class="top-actions" aria-label="פעולות עליונות">
-        <button id="newGameBtn" class="btn btn-main" aria-label="התחל משחק חדש">התחל חדש</button>
-        <button id="continueBtn" class="btn" aria-label="המשך משחק שמור">המשך</button>
+      <div class="top-actions" aria-label="פעולות">
+        <button id="newGameBtn" class="btn btn-main" aria-label="התחל חדש">התחל חדש</button>
+        <button id="continueBtn" class="btn" aria-label="המשך משחק">המשך</button>
+        <button id="freeModeBtn" class="btn" aria-label="המשך חופשי" hidden>המשך חופשי+</button>
         <button id="helpBtn" class="btn" aria-label="עזרה">עזרה</button>
-        <button id="themeBtn" class="btn" aria-label="החלפת ערכת צבע">מצב: כהה</button>
-      </div>
-
-      <div class="settings-row">
-        <label for="speedSelect">מהירות שנה</label>
-        <select id="speedSelect" aria-label="מספר אירועים לשנה">
-          <option value="slow">איטי (3 אירועים)</option>
-          <option value="normal">רגיל (5 אירועים)</option>
-          <option value="crazy">מטורף (8 אירועים)</option>
-        </select>
+        <button id="themeBtn" class="btn" aria-label="מצב כהה או בהיר">מצב: כהה</button>
       </div>
 
       <div class="status-row" aria-live="polite">
-        <span id="queueIndicator">אירועי השנה: 0</span>
-        <span id="relationshipIndicator">סטטוס אהבה: רווק/ה</span>
-        <span id="jobIndicator">עבודה: ללא עבודה</span>
+        <span id="turnIndicator">תור 1/120</span>
+        <span id="seasonIndicator">עונה 1/4</span>
       </div>
     </header>
 
     <main class="main-area">
-      <section class="card main-cta">
-        <button id="advanceYearBtn" class="btn btn-main btn-wide" aria-label="התקדם שנה">התקדם שנה</button>
+      <section id="storyTab" class="tab-panel" data-tab="story">
+        <div id="homeCard" class="card home-card">
+          <h2>אתה מתחיל עם לחץ וכסף קצר</h2>
+          <p>כל בחירה משנה עסק, בית וקשר.</p>
+          <p>מה שאתה עושה בלילה, יכול ליפול עליך בבוקר.</p>
+          <div class="home-actions">
+            <button id="homeNewBtn" class="btn btn-main">התחל משחק חדש</button>
+            <button id="homeContinueBtn" class="btn">המשך משחק שמור</button>
+            <button id="homeFreeBtn" class="btn" hidden>המשך חופשי+</button>
+          </div>
+        </div>
+
+        <article id="scenarioCard" class="card" hidden>
+          <h2 id="scenarioTitle">-</h2>
+          <div id="scenarioText" class="text-lines"></div>
+          <ul id="scenarioBullets" class="bullets"></ul>
+          <div id="choicesBox" class="choices" aria-label="אפשרויות"></div>
+        </article>
+
+        <section id="resultCard" class="card" hidden aria-live="polite">
+          <h3>מה קרה עכשיו</h3>
+          <p id="resultMain"></p>
+          <ul id="resultExtra" class="bullets"></ul>
+          <div id="resultClue" class="result-clue" hidden></div>
+          <div id="deltaBox" class="chips"></div>
+          <button id="nextTurnBtn" class="btn btn-main">המשך לשבוע הבא</button>
+        </section>
+
+        <section id="endingCard" class="card" hidden>
+          <h2 id="endingTitle"></h2>
+          <p id="endingText"></p>
+          <div class="end-actions">
+            <button id="endingNewBtn" class="btn btn-main">משחק חדש</button>
+            <button id="endingFreeBtn" class="btn" hidden>המשך חופשי+</button>
+          </div>
+        </section>
+
+        <section id="monthSummaryCard" class="card" hidden>
+          <h3>סיכום חודש</h3>
+          <p id="monthSummaryText"></p>
+        </section>
       </section>
 
-      <section id="homeCard" class="card home-card">
-        <h2>החיים שלך רצים שנה אחרי שנה</h2>
-        <p>כל שנה מביאה כמה אירועים קצרים.</p>
-        <p>אפשר גם ליזום פעולות מכל טאב בכל זמן.</p>
-        <div id="ngpBox" class="ngp-box" hidden>
-          <h3>המשך חזק יותר</h3>
-          <p>בחר בונוס פתיחה אחד למשחק הבא:</p>
-          <div id="perkButtons" class="choices"></div>
+      <section id="statsTab" class="tab-panel" data-tab="stats" hidden>
+        <div class="card">
+          <h2>סטטיסטיקות</h2>
+          <div id="moneyLine" class="value-line">כסף: ₪0</div>
+          <div id="assetsLine" class="value-line">נכסים: ₪0</div>
+          <div id="debtsLine" class="value-line">חובות: ₪0</div>
+          <div id="statsBars" class="bars"></div>
         </div>
       </section>
 
-      <section id="statsCard" class="card">
-        <h2>מצב חיים</h2>
-        <div id="moneyLine" class="value-line">כסף: ₪5,000</div>
-        <div id="statsBars" class="bars"></div>
+      <section id="assetsTab" class="tab-panel" data-tab="assets" hidden>
+        <div class="card">
+          <h2>רכוש</h2>
+          <p class="small">מה שקנית משפיע כל חודש.</p>
+          <div id="ownedList" class="list"></div>
+        </div>
+        <div class="card">
+          <h3>מה אפשר לקנות</h3>
+          <div id="storeList" class="list"></div>
+        </div>
       </section>
 
-      <section id="eventCard" class="card" hidden>
-        <h2 id="eventTitle">אירוע</h2>
-        <p id="eventText"></p>
-        <div id="eventChoices" class="choices"></div>
-        <button id="nextEventBtn" class="btn btn-main" hidden>המשך</button>
+      <section id="relationsTab" class="tab-panel" data-tab="relations" hidden>
+        <div class="card">
+          <h2>קשרים</h2>
+          <ul id="relationsList" class="list plain"></ul>
+        </div>
       </section>
 
-      <section id="consequenceCard" class="card" hidden>
-        <h3>השלכות</h3>
-        <div id="consequenceChips" class="chips"></div>
-        <p id="whyLine" class="small"></p>
+      <section id="cluesTab" class="tab-panel" data-tab="clues" hidden>
+        <div class="card">
+          <h2>רמזים</h2>
+          <ul id="cluesList" class="list plain"></ul>
+        </div>
       </section>
 
-      <section id="yearSummaryCard" class="card" hidden>
-        <h2>סיכום שנה</h2>
-        <p id="yearMoneyFlow"></p>
-        <p id="yearWorkFlow"></p>
-        <p id="yearLoveFlow"></p>
-        <p id="yearFamilyFlow"></p>
-        <p id="yearHealthFlow"></p>
-        <h3>3 אירועים מרכזיים</h3>
-        <ul id="yearHighlights" class="bullets"></ul>
-      </section>
-
-      <section id="tabCard" class="card">
-        <h2 id="tabTitle">חיים</h2>
-        <ul id="tabSummary" class="bullets"></ul>
-        <div id="tabActions" class="choices"></div>
-      </section>
-
-      <section id="journalCard" class="card" hidden>
-        <h2>יומן</h2>
-        <div id="journalList" class="list"></div>
-      </section>
-
-      <section id="endingCollectionCard" class="card" hidden>
-        <h2>סיומות</h2>
-        <p id="endingProgress"></p>
-        <div id="endingGrid" class="end-grid"></div>
-      </section>
-
-      <section id="endingCard" class="card" hidden>
-        <h2 id="endingTitle"></h2>
-        <p id="endingText"></p>
-        <button id="endingNewGameBtn" class="btn btn-main">משחק חדש</button>
+      <section id="endingsTab" class="tab-panel" data-tab="endings" hidden>
+        <div class="card">
+          <h2>סיומות שנפתחו</h2>
+          <p id="endingProgress">0/20</p>
+          <div id="endingsGrid" class="end-grid"></div>
+        </div>
+        <div class="card">
+          <h3>באג'ים</h3>
+          <div id="badgesGrid" class="end-grid"></div>
+        </div>
       </section>
     </main>
 
-    <nav class="bottom-nav" aria-label="ניווט תחתון">
-      <button class="tab-btn active" data-tab="life">חיים</button>
-      <button class="tab-btn" data-tab="work">עבודה</button>
-      <button class="tab-btn" data-tab="love">אהבה</button>
-      <button class="tab-btn" data-tab="family">משפחה</button>
-      <button class="tab-btn" data-tab="assets">נכסים</button>
-      <button class="tab-btn" data-tab="health">בריאות</button>
-      <button class="tab-btn" data-tab="education">לימודים</button>
-      <button class="tab-btn" data-tab="business">עסקים</button>
-      <button class="tab-btn" data-tab="investments">השקעות</button>
-      <button class="tab-btn" data-tab="journal">יומן</button>
+    <nav class="bottom-nav" aria-label="ניווט">
+      <button class="tab-btn active" data-tab-btn="story">סיפור</button>
+      <button class="tab-btn" data-tab-btn="stats">סטטיסטיקות</button>
+      <button class="tab-btn" data-tab-btn="assets">רכוש</button>
+      <button class="tab-btn" data-tab-btn="relations">קשרים</button>
+      <button class="tab-btn" data-tab-btn="clues">רמזים</button>
+      <button class="tab-btn" data-tab-btn="endings">סיומות</button>
     </nav>
   </div>
 
@@ -125,11 +135,17 @@
 
   <dialog id="helpDialog" aria-label="עזרה">
     <article class="help-body">
-      <h2>איך משחקים</h2>
-      <p>לוחצים "התקדם שנה" ומקבלים סדרת אירועים.</p>
-      <p>בכל זמן אפשר לעבור לטאבים וליזום פעולות.</p>
-      <p>אחרי כל אירוע או פעולה רואים מיד השלכות.</p>
-      <p>סיומות רגילות נפתחות בעיקר מגיל 30 ומעלה, חוץ מקריסה קיצונית.</p>
+      <h2>איך זה עובד</h2>
+      <p>כל שבוע אתה בוחר צעד. זה משפיע על כסף, עסק, בית וקשר.</p>
+      <ul>
+        <li><strong>תזרים</strong>: כמה העסק מחזיק את החודש.</li>
+        <li><strong>השקעות</strong>: כמה חזק התיק שלך.</li>
+        <li><strong>כמה יודעים עליך</strong>: כמה אנשים כבר שמעו על מה שאתה עושה.</li>
+        <li><strong>כמה סומכים עליך</strong>: כמה אנשים מאמינים לך.</li>
+        <li><strong>קשר</strong>: מה קורה בינך לבין מאיה.</li>
+        <li><strong>בית/משפחה</strong>: כמה הבית יציב כרגע.</li>
+      </ul>
+      <p>מה שבחרת היום יכול לחזור אליך עוד כמה שבועות.</p>
       <button id="closeHelpBtn" class="btn btn-main">סגור</button>
     </article>
   </dialog>
