@@ -2,8 +2,8 @@
   "use strict";
 
   const STORAGE_KEYS = {
-    run: "קו_דק_run_v1",
-    meta: "קו_דק_meta_v1"
+    run: "kav_dak_run_v3",
+    meta: "kav_dak_meta_v3"
   };
 
   const PHASES = {
@@ -13,1204 +13,1249 @@
     ENDED: "ENDED"
   };
 
-  const MAX_TURNS = 16;
+  const TAB_IDS = ["story", "stats", "assets", "relations", "clues", "endings"];
+  const MAX_STANDARD_TURNS = 120;
+  const WEEKS_IN_MONTH = 4;
+
+  const STAT_META = [
+    { key: "money", label: "כסף", type: "number" },
+    { key: "cashflow", label: "תזרים", type: "percent" },
+    { key: "investments", label: "השקעות", type: "percent" },
+    { key: "assets", label: "נכסים", type: "number" },
+    { key: "debts", label: "חובות", type: "number" },
+    { key: "energy", label: "אנרגיה", type: "percent" },
+    { key: "stress", label: "לחץ", type: "percent" },
+    { key: "exposure", label: "כמה יודעים עליך", type: "percent" },
+    { key: "trust", label: "כמה סומכים עליך", type: "percent" },
+    { key: "relationship", label: "קשר", type: "percent" },
+    { key: "family", label: "בית/משפחה", type: "percent" },
+    { key: "reputation", label: "מוניטין", type: "percent" }
+  ];
+
+  const PERCENT_KEYS = STAT_META.filter((item) => item.type === "percent").map((item) => item.key);
 
   const INITIAL_STATS = {
     money: 5000,
     cashflow: 45,
-    portfolio: 35,
+    investments: 35,
+    assets: 0,
+    debts: 0,
     energy: 70,
     stress: 25,
     exposure: 15,
-    credibility: 55,
-    closeness: 15
-  };
-
-  const STAT_ORDER = ["cashflow", "portfolio", "energy", "stress", "exposure", "credibility", "closeness"];
-  const STAT_LABELS = {
-    money: "כסף",
-    cashflow: "תזרים",
-    portfolio: "תיק השקעות",
-    energy: "אנרגיה",
-    stress: "לחץ",
-    exposure: "חשיפה",
-    credibility: "אמינות",
-    closeness: "קרבה"
+    trust: 55,
+    relationship: 15,
+    family: 40,
+    reputation: 45
   };
 
   const FLAG_KEYS = [
-    "overdue_debt",
-    "family_emergency",
-    "family_secret",
-    "borrowed_from_family",
-    "promised_family_support",
-    "investor_interest",
-    "signed_term_sheet",
-    "found_red_flags",
-    "partner_pressure",
-    "leaked_screenshot",
-    "late_night_meeting",
-    "crossed_boundary",
-    "jealousy_triggered",
-    "hidden_document",
-    "legal_risk",
-    "mentor_warning",
-    "family_emergency_resolved",
-    "rumor_active"
+    "isDating",
+    "isMarried",
+    "hasKids",
+    "affairActive",
+    "affairSuspected",
+    "caughtCheating",
+    "breakupThreat",
+    "blackmailRisk",
+    "legalRisk",
+    "rebuiltAfterFall",
+    "highRiskMode",
+    "partnerPressure",
+    "familyNeedCash",
+    "lateNightPattern",
+    "leakActive",
+    "investigationOpen",
+    "mentorWarning",
+    "goodDealHit",
+    "badDealHit",
+    "businessOpened"
   ];
 
-  const WARNING_RULES = [
-    { key: "money_minus", check: (s) => s.money < 0, text: "אזהרה: כסף במינוס", level: "alert" },
-    { key: "cashflow_critical", check: (s) => s.cashflow < 25, text: "אזהרה: תזרים קריטי", level: "alert" },
-    { key: "stress_extreme", check: (s) => s.stress > 85, text: "לחץ חריג", level: "alert" },
-    { key: "exposure_high", check: (s) => s.exposure > 75, text: "חשיפה גבוהה", level: "alert" },
-    { key: "credibility_low", check: (s) => s.credibility < 25, text: "אמינות נשחקת", level: "alert" },
-    { key: "closeness_edge", check: (s) => s.closeness > 80, text: "הגבול נהיה דק", level: "alert" }
+  const CHARACTERS = {
+    love: "מאיה",
+    spouse: "בת הזוג",
+    rival: "רוני"
+  };
+
+  const ITEM_CATALOG = [
+    {
+      id: "item_car",
+      name: "רכב",
+      price: 42000,
+      risk: "בינוני",
+      note: "עוזר להגיע מהר, אבל עולה כל חודש.",
+      monthly: { money: -1200, reputation: 2, relationship: 1 }
+    },
+    {
+      id: "item_small_apartment",
+      name: "דירה קטנה",
+      price: 185000,
+      risk: "בינוני",
+      note: "יכול לתת שכירות או בית יציב.",
+      monthly: { money: 1900, family: 6, stress: -2 }
+    },
+    {
+      id: "item_business",
+      name: "עסק",
+      price: 130000,
+      risk: "גבוה",
+      note: "אם זה עובד אתה קופץ, אם לא אתה נשרף.",
+      monthly: { money: 4200, cashflow: 5, stress: 4, reputation: 3 }
+    },
+    {
+      id: "item_laptop",
+      name: "מחשב חדש",
+      price: 9200,
+      risk: "נמוך",
+      note: "משפר קצב עבודה.",
+      monthly: { energy: 2, reputation: 1 }
+    },
+    {
+      id: "item_phone",
+      name: "טלפון יקר",
+      price: 6800,
+      risk: "בינוני",
+      note: "פותח קשרים, גם מביא עיניים.",
+      monthly: { relationship: 2, exposure: 2 }
+    },
+    {
+      id: "item_invest_account",
+      name: "חשבון השקעות פרטי",
+      price: 35000,
+      risk: "גבוה",
+      note: "יותר רווח, יותר סיכון.",
+      monthly: { investments: 4, exposure: 3, stress: 2 }
+    },
+    {
+      id: "item_kids_room",
+      name: "חדר ילדים",
+      price: 26000,
+      risk: "נמוך",
+      note: "עוזר לבית, אבל מוסיף הוצאות.",
+      monthly: { money: -900, family: 5, stress: -1 }
+    },
+    {
+      id: "item_second_car",
+      name: "רכב שני",
+      price: 56000,
+      risk: "גבוה",
+      note: "נוח לפגישות כפולות. גם מחשיד.",
+      monthly: { money: -1500, exposure: 4, relationship: 2 }
+    }
   ];
 
   const CLUES = [
-    { id: "c01", text: "מסמך שלא אמור להיות כאן", severity: 3, category: "ביזנס" },
-    { id: "c02", text: "המספר חסום — שוב", severity: 2, category: "קשר" },
-    { id: "c03", text: "מישהו שמר צילום מסך", severity: 3, category: "חשיפה" },
-    { id: "c04", text: "הוא ידע לפני שסיפרת", severity: 2, category: "משפחה" },
-    { id: "c05", text: "הסכם בלי סעיף אחד", severity: 2, category: "ביזנס" },
-    { id: "c06", text: "השקעה שנראית נקייה מדי", severity: 2, category: "השקעות" },
-    { id: "c07", text: "הוא לא בא לבד", severity: 3, category: "קשר" },
-    { id: "c08", text: "שם של עורך דין", severity: 2, category: "חשיפה" },
-    { id: "c09", text: "חשבון זמני בחו\"ל", severity: 3, category: "השקעות" },
-    { id: "c10", text: "חתימה שלא תואמת", severity: 3, category: "ביזנס" },
-    { id: "c11", text: "העברה בשעה 03:14", severity: 2, category: "חשיפה" },
-    { id: "c12", text: "מילה שנמחקה מהחוזה", severity: 2, category: "ביזנס" },
-    { id: "c13", text: "היא שאלה על הילדים שלך", severity: 2, category: "קשר" },
-    { id: "c14", text: "אחיך מכיר את השם", severity: 2, category: "משפחה" },
-    { id: "c15", text: "הבטחה מוקלטת", severity: 3, category: "חשיפה" },
-    { id: "c16", text: "הדוח הגיע בלי עמוד אחרון", severity: 2, category: "השקעות" },
-    { id: "c17", text: "קבלה כפולה לאותו ספק", severity: 2, category: "ביזנס" },
-    { id: "c18", text: "מפתח גיבוי אצל מישהו אחר", severity: 2, category: "חשיפה" },
-    { id: "c19", text: "מונית חיכתה כבר קודם", severity: 1, category: "קשר" },
-    { id: "c20", text: "מספר תיק בבית משפט", severity: 3, category: "חשיפה" },
-    { id: "c21", text: "היא לחצה על השתקה", severity: 2, category: "קשר" },
-    { id: "c22", text: "הכסף חזר ממקור לא צפוי", severity: 1, category: "השקעות" },
-    { id: "c23", text: "פתק בתוך התיק המשפחתי", severity: 3, category: "משפחה" },
-    { id: "c24", text: "הלו\"ז שלה לא תאם", severity: 2, category: "קשר" }
+    { id: "c001", text: "מישהו צילם אותך", severity: 3, category: "חשיפה" },
+    { id: "c002", text: "מסמך חסר", severity: 2, category: "ביזנס" },
+    { id: "c003", text: "הודעה נמחקה", severity: 2, category: "קשר" },
+    { id: "c004", text: "השם שלך עלה בשיחה", severity: 2, category: "חשיפה" },
+    { id: "c005", text: "חתימה לא נראית אותו דבר", severity: 3, category: "ביזנס" },
+    { id: "c006", text: "הבטחה בלי הוכחה", severity: 2, category: "השקעות" },
+    { id: "c007", text: "מאיה לא ענתה שעה", severity: 1, category: "קשר" },
+    { id: "c008", text: "רוני שאלה יותר מדי", severity: 2, category: "קשר" },
+    { id: "c009", text: "העברה חזרה", severity: 2, category: "השקעות" },
+    { id: "c010", text: "צד שלישי בתמונה", severity: 3, category: "חשיפה" },
+    { id: "c011", text: "מכתב מעורך דין", severity: 3, category: "חשיפה" },
+    { id: "c012", text: "מישהו שיקר על סכום", severity: 2, category: "ביזנס" },
+    { id: "c013", text: "פגישה אחרי חצות", severity: 2, category: "קשר" },
+    { id: "c014", text: "הטלפון צלצל בזמן רע", severity: 2, category: "משפחה" },
+    { id: "c015", text: "צילום מסך בקבוצה", severity: 3, category: "חשיפה" },
+    { id: "c016", text: "חוזה בלי סעיף", severity: 2, category: "ביזנס" },
+    { id: "c017", text: "שם של חשבון זר", severity: 3, category: "השקעות" },
+    { id: "c018", text: "שומר הכניסה זכר אותך", severity: 1, category: "חשיפה" },
+    { id: "c019", text: "היא נגעה ביד שלך", severity: 1, category: "קשר" },
+    { id: "c020", text: "הבית ביקש תשובה עכשיו", severity: 2, category: "משפחה" },
+    { id: "c021", text: "השותף אוסף חומר", severity: 2, category: "ביזנס" },
+    { id: "c022", text: "מספר חסוי חוזר", severity: 2, category: "קשר" },
+    { id: "c023", text: "הדוח הגיע חתוך", severity: 2, category: "השקעות" },
+    { id: "c024", text: "מפתח נוסף קיים", severity: 2, category: "חשיפה" },
+    { id: "c025", text: "מישהו ראה אתכם יחד", severity: 3, category: "קשר" },
+    { id: "c026", text: "שורה נמחקה בחוזה", severity: 2, category: "ביזנס" },
+    { id: "c027", text: "ריבית לא כתובה", severity: 2, category: "השקעות" },
+    { id: "c028", text: "הבן זוג שאל איפה היית", severity: 2, category: "משפחה" },
+    { id: "c029", text: "קובץ הגיע למי שלא צריך", severity: 3, category: "חשיפה" },
+    { id: "c030", text: "מאיה מחייכת אבל לחוצה", severity: 1, category: "קשר" },
+    { id: "c031", text: "בדיקה רשמית נפתחה", severity: 3, category: "ביזנס" },
+    { id: "c032", text: "רמז על הלבנת כסף", severity: 3, category: "השקעות" },
+    { id: "c033", text: "תמונה מהחניה", severity: 2, category: "חשיפה" },
+    { id: "c034", text: "ילד שאל שאלה קשה", severity: 1, category: "משפחה" },
+    { id: "c035", text: "מייל נשלח מהחשבון שלך", severity: 2, category: "חשיפה" },
+    { id: "c036", text: "רוני שומרת העתק", severity: 2, category: "ביזנס" },
+    { id: "c037", text: "השותף איים לעזוב", severity: 2, category: "ביזנס" },
+    { id: "c038", text: "רווח מהר מדי", severity: 1, category: "השקעות" },
+    { id: "c039", text: "שיחה שקטה במסדרון", severity: 1, category: "קשר" },
+    { id: "c040", text: "עורך דין בתמונה", severity: 3, category: "חשיפה" },
+    { id: "c041", text: "חוב ישן חזר", severity: 2, category: "משפחה" },
+    { id: "c042", text: "שומר הלובי סימן אותך", severity: 1, category: "חשיפה" },
+    { id: "c043", text: "מכתב לפני תביעה", severity: 3, category: "ביזנס" },
+    { id: "c044", text: "הילד שמע שיחה", severity: 2, category: "משפחה" },
+    { id: "c045", text: "מאיה אמרה: אל תאחר שוב", severity: 1, category: "קשר" }
   ];
 
   const ENDINGS = [
-    { id: "cold_win", title: "ניצחון קר", summary: "הרווחת חזק, שמרת שליטה, והשארת לבבות מאחור." },
-    { id: "collapse", title: "קריסה", summary: "התזרים נשבר והמינוס סגר על כל אפשרות." },
-    { id: "exposed", title: "נחשפת", summary: "הצילומים והלחישות הפכו לכותרת ברורה מדי." },
-    { id: "red_line", title: "קו אדום", summary: "לחצת עוד צעד אחד, והמערכת הפסיקה לסלוח." },
-    { id: "last_minute_save", title: "הצלה ברגע האחרון", summary: "לא ניצחון מבריק, אבל נשארת עומד." },
-    { id: "credibility_hold", title: "אמינות שנשמרה", summary: "ויתרת על קיצורים ושמרת את השם שלך נקי." },
-    { id: "burnout", title: "עייפות מוחלטת", summary: "הלחץ אכל אנרגיה עד שלא נשאר מה לנהל." },
-    { id: "dirty_deal", title: "עסקה מפוקפקת", summary: "החתימה נסגרה, אבל הריח לא ירד מהחדר." },
-    { id: "boxed_in", title: "סגרו עליך", summary: "משפטית, תדמיתית ואישית, כל הדלתות הצטמצמו." },
-    { id: "silent_betrayal", title: "בגידה שקטה", summary: "אף אחד לא צעק, אבל הקו נשבר מבפנים." },
-    { id: "dangerous_closeness", title: "התקרבות מסוכנת", summary: "המשיכה הפכה למנוף, והמנוף הפך למלכודת." },
-    { id: "family_first", title: "משפחה מעל הכול", summary: "שמעת את הבית, גם כשהמספרים התנגדו." },
-    { id: "quiet_deal", title: "עסקה שקטה", summary: "סגרת נכון, בלי רעש ובלי שריפה מיותרת." },
-    { id: "we_both_knew", title: "שניכם ידעתם", summary: "אף מילה לא נאמרה עד הסוף, ושניכם הבנתם הכול." }
+    { id: "cold_win", title: "ניצחון קר", summary: "עשית הרבה כסף. נשארת לבד עם זה." },
+    { id: "family_win", title: "ניצחון בית", summary: "בחרת בבית. פחות כסף, יותר שקט." },
+    { id: "scandal", title: "כולם יודעים", summary: "הכול דלף. אין לאן לברוח." },
+    { id: "collapse", title: "קריסה", summary: "חובות ותזרים גררו אותך למטה." },
+    { id: "burnout", title: "נגמר לך הכוח", summary: "הלחץ גמר אותך לפני הסוף." },
+    { id: "betrayal", title: "בגידה", summary: "שברת אמון בבית ובעסק יחד." },
+    { id: "legal_trouble", title: "תיק משפטי", summary: "המסמכים הגיעו לבית משפט." },
+    { id: "double_life", title: "חיים כפולים", summary: "בינתיים אף אחד לא תפס. בינתיים." },
+    { id: "redemption", title: "חזרה לחיים", summary: "נפלת, קמת, ובנית מחדש." },
+    { id: "quiet_money", title: "כסף שקט", summary: "בלי רעש, בלי דרמה, עם רווח יציב." },
+    { id: "dirty_rich", title: "עשיר אבל מלוכלך", summary: "הרווחת בגדול, ושילמת בשם שלך." },
+    { id: "alone_top", title: "למעלה לבד", summary: "אתה בטופ, אבל בלי אנשים סביבך." },
+    { id: "broke_home", title: "עני אבל בבית", summary: "לא נשאר הרבה כסף, אבל הבית מחזיק." },
+    { id: "blackmail", title: "סחיטה", summary: "מישהו מחזיק עליך חומר ומושך בחוטים." },
+    { id: "divorce_public", title: "פירוק פומבי", summary: "זה נגמר בבית מול כולם." },
+    { id: "second_chance", title: "הזדמנות שנייה", summary: "חתכת בזמן והתחלת דף חדש." },
+    { id: "business_empire", title: "אימפריה", summary: "בניית עסק ענק עם שליטה מלאה." },
+    { id: "hidden_fire", title: "אש שקטה", summary: "הכול נראה רגיל, אבל הכול בוער בפנים." },
+    { id: "law_clear", title: "יצאת נקי", summary: "בדקו אותך ולא מצאו כלום." },
+    { id: "long_run", title: "ריצה ארוכה", summary: "שרדת הרבה זמן. זה גם ניצחון." }
+  ];
+
+  const BADGES = [
+    { id: "badge_first_apartment", title: "דירה ראשונה", desc: "קנית דירה קטנה." },
+    { id: "badge_good_invest", title: "השקעה מוצלחת", desc: "פעם אחת פגעת בול בהשקעה." },
+    { id: "badge_almost_caught", title: "כמעט נתפסת", desc: "החשד עלה גבוה וניצלת." },
+    { id: "badge_wedding", title: "חתונה", desc: "נכנסת לחיים משותפים אמיתיים." },
+    { id: "badge_first_business", title: "עסק ראשון", desc: "פתחת עסק משלך." },
+    { id: "badge_big_rebuild", title: "חזרה גדולה", desc: "אחרי נפילה חזרת חזק." },
+    { id: "badge_secret_master", title: "שומר סוד", desc: "החזקת סוד הרבה זמן." },
+    { id: "badge_legal_escape", title: "ברחת מתביעה", desc: "הצלחת לצאת מתיק משפטי." }
+  ];
+
+  const DEALS = [
+    {
+      id: "deal_green",
+      title: "פרויקט תשתית קטן",
+      line: "סכום קטן, סיכון נמוך.",
+      baseGain: 5200,
+      baseLoss: 2200,
+      risk: 20,
+      clueWin: "c038",
+      clueLoss: "c027"
+    },
+    {
+      id: "deal_blue",
+      title: "הכנסה מחברת תוכנה",
+      line: "יכול להיות יפה, יכול להתהפך.",
+      baseGain: 12000,
+      baseLoss: 7800,
+      risk: 42,
+      clueWin: "c023",
+      clueLoss: "c032"
+    },
+    {
+      id: "deal_red",
+      title: "סיבוב מהיר בחו\"ל",
+      line: "כסף גדול בזמן קצר. גם הרבה עיניים.",
+      baseGain: 24000,
+      baseLoss: 20000,
+      risk: 68,
+      clueWin: "c017",
+      clueLoss: "c040"
+    }
   ];
 
   const RANDOM_EVENTS = [
-    { id: "e01", text: "הבנק עצר העברה לשעתיים.", effects: { cashflow: -3, stress: 3 } },
-    { id: "e02", text: "מספר חסוי שלח: \"נדבר לבד?\"", effects: { closeness: 3, exposure: 2, stress: 2 }, clueId: "c02", clueChance: 0.35 },
-    { id: "e03", text: "ספק שלח תיקון מחיר קטן, אבל לא בזמן.", effects: { money: -450, cashflow: -2, stress: 2 }, clueId: "c17", clueChance: 0.2 },
-    { id: "e04", text: "הודעה קולית מהבית: \"אנחנו מחכים לך\".", effects: { stress: 4, credibility: 1 }, flags: { set: ["family_emergency"] } },
-    { id: "e05", text: "צילום ישן הופיע בקבוצה הלא נכונה.", effects: { exposure: 5, stress: 3 }, clueId: "c03", clueChance: 0.25, flags: { set: ["leaked_screenshot"] } },
-    { id: "e06", text: "השוק זז לטובתך לרגע קצר.", effects: { money: 600, portfolio: 2, cashflow: 1 } },
-    { id: "e07", text: "מצלמת חניה קלטה מפגש שלא תכננת להסביר.", effects: { exposure: 4, stress: 2 }, clueId: "c19", clueChance: 0.45 },
-    { id: "e08", text: "מנטור ותיק כתב: \"תבדוק את העמוד האחרון\".", effects: { credibility: 2, stress: 1 }, clueId: "c16", clueChance: 0.4, flags: { set: ["mentor_warning"] } },
-    { id: "e09", text: "נכנסה העברה זעירה ממקור לא מוכר.", effects: { money: 320, exposure: 1 }, clueId: "c22", clueChance: 0.5 },
-    { id: "e10", text: "שם של עורך דין עלה בשיחה צדדית.", effects: { stress: 2, exposure: 2 }, clueId: "c20", clueChance: 0.12, flags: { set: ["legal_risk"] } }
+    { id: "re1", text: "הבנק עצר העברה לשעה.", effects: { cashflow: -3, stress: 3 } },
+    { id: "re2", text: "מאיה שלחה: \"ערה?\"", effects: { relationship: 3, exposure: 2 }, clues: ["c013"] },
+    { id: "re3", text: "הבית ביקש עוד עזרה כספית.", effects: { money: -900, family: 2, stress: 3 }, flags: { set: ["familyNeedCash"] } },
+    { id: "re4", text: "רוני אמרה ששמעה שמועה.", effects: { trust: -2, exposure: 3 }, clues: ["c004"] },
+    { id: "re5", text: "שוק ההון זז לטובתך.", effects: { money: 1800, investments: 2 } },
+    { id: "re6", text: "מישהו חיכה ליד הרכב.", effects: { stress: 4, exposure: 2 }, clues: ["c018"] },
+    { id: "re7", text: "הילד לא ישן וחיכה לך.", effects: { family: -2, stress: 2, relationship: -1 }, clues: ["c034"], needsFlags: ["hasKids"] },
+    { id: "re8", text: "קיבלת לקוח קטן מהמלצה.", effects: { money: 1200, reputation: 2, cashflow: 2 } },
+    { id: "re9", text: "צילום מסך עבר הלאה.", effects: { exposure: 5, stress: 4 }, clues: ["c015"], flags: { set: ["leakActive"] } },
+    { id: "re10", text: "הבן זוג שאל איפה היית בלילה.", effects: { trust: -3, stress: 3 }, clues: ["c028"], needsFlags: ["isDating"] },
+    { id: "re11", text: "צוות בעסק ביקש שיחה קשה.", effects: { energy: -2, trust: -2, cashflow: -2 } },
+    { id: "re12", text: "מייל מעורך דין נכנס.", effects: { stress: 4, exposure: 2 }, clues: ["c011"], flags: { set: ["legalRisk"] } }
   ];
 
   const SCENARIOS = [
     {
-      id: "s001",
-      title: "5,000₪ על השולחן",
-      text: ["זה מה שנשאר זמין.", "החלטה אחת קונה זמן.", "החלטה אחרת פותחת דלת שלא תוכל לסגור."],
-      bullets: ["אין כרית ביטחון", "כל צעד נרשם"],
+      id: "biz_supplier",
+      minTurn: 1,
+      maxTurn: 120,
+      tags: ["business"],
+      title: "ספק לוחץ עליך",
+      text: ["הספק רוצה תשלום עד הערב.", "אם לא תשלם, העבודה נעצרת."],
+      bullets: ["הצוות מחכה", "גם בבית מחכים לכסף"],
       choices: [
         {
-          id: "s001_c1",
-          label: "לשמור מזומן",
-          immediateEffects: { cashflow: 4, exposure: -4, stress: 3, energy: -1 },
-          delayed: [{ afterTurns: 2, effects: { stress: 6, cashflow: 2 }, revealText: "שמרת אוויר, אבל לא נרדמת." }],
-          flags: { set: ["overdue_debt"] },
-          resultText: "הכסף נשאר קרוב. הזמן נשאר קצר.",
-          next: "s002"
+          id: "a",
+          label: "לשלם עכשיו",
+          result: "שילמת. העסק נרגע, הכיס נלחץ.",
+          effects: { money: -3500, cashflow: 5, stress: 2 },
+          clues: ["c002"]
         },
         {
-          id: "s001_c2",
-          label: "השקעה זהירה",
-          immediateEffects: { money: -1200, portfolio: 7, stress: 4, cashflow: 1 },
-          delayed: [{ afterTurns: 2, effects: { money: 1800, cashflow: 5, portfolio: 3, stress: -2 }, revealText: "המהלך החזיר קצת אוויר." }],
-          clues: ["c06"],
-          resultText: "נכנסת בזהירות. העיניים כבר על התשואה.",
-          next: "s003"
+          id: "b",
+          label: "לבקש דחייה קשוחה",
+          result: "קיבלת עוד יומיים, אבל הוא לא שכח.",
+          effects: { cashflow: -4, trust: -2, stress: 4 },
+          flags: { set: ["partnerPressure"] }
         },
         {
-          id: "s001_c3",
-          label: "מהלך מהיר",
-          immediateEffects: { money: 2400, portfolio: 10, exposure: 9, stress: 8, cashflow: 3 },
-          delayed: [{ afterTurns: 2, effects: { cashflow: -7, exposure: 5, stress: 5 }, revealText: "המחיר של מהירות התחיל להופיע.", clues: ["c09"] }],
-          flags: { set: ["legal_risk", "investor_interest"] },
-          resultText: "נכנס הרבה כסף מהר מדי. גם אור זרקורים.",
-          next: "s004"
+          id: "c",
+          label: "לבקש ממאיה לקשר חלופי",
+          result: "נפתח קו חדש. גם המתח עלה.",
+          effects: { relationship: 5, exposure: 4, stress: 2 },
+          flags: { set: ["lateNightPattern"] },
+          clues: ["c039"]
         }
       ]
     },
     {
-      id: "s002",
-      title: "הספק חוסם אספקה",
-      text: ["בלי מקדמה, הקו נעצר.", "הצוות מחכה לתשובה בתוך שעה."],
-      bullets: ["הפסקה עכשיו פוגעת במכירות", "בבית כבר לוחצים"],
+      id: "biz_hire",
+      minTurn: 3,
+      maxTurn: 120,
+      tags: ["business"],
+      title: "צריך עוד ידיים",
+      text: ["העבודה גדלה.", "אין מי שיחזיק הכול."],
+      bullets: ["שכירות עולה כסף", "עומס שוחק"],
       choices: [
         {
-          id: "s002_c1",
-          label: "לשלם ממקור משפחתי",
-          immediateEffects: { money: -1800, cashflow: 8, credibility: 2, stress: 4 },
-          delayed: [{ afterTurns: 3, effects: { money: -900, stress: 4 }, revealText: "המשפחה מזכירה שהחוב עוד פתוח.", clues: ["c14"] }],
-          flags: { set: ["borrowed_from_family", "promised_family_support"] },
-          resultText: "העסק נשם. הבית קיבל משקל חדש.",
-          next: "s005"
+          id: "a",
+          label: "לגייס עובד",
+          result: "העומס ירד, העלות קבועה כל חודש.",
+          effects: { money: -2500, cashflow: 4, energy: 3, stress: -2, reputation: 2 }
         },
         {
-          id: "s002_c2",
-          label: "לדחות תשלום ולחתוך הזמנות",
-          immediateEffects: { cashflow: -5, energy: -3, stress: 6, exposure: 2 },
-          flags: { set: ["overdue_debt"] },
-          clues: ["c17"],
-          resultText: "קנית יום. איבדת אמון אצל הספק.",
-          next: "s006"
+          id: "b",
+          label: "להישאר לבד",
+          result: "חסכת כסף. הגוף שלך משלם.",
+          effects: { energy: -6, stress: 6, cashflow: 2 }
         },
         {
-          id: "s002_c3",
-          label: "לחפש ספק חלופי דרך קשר אישי",
-          immediateEffects: { money: -500, cashflow: 3, exposure: 5, closeness: 4, stress: 3 },
-          flags: { set: ["late_night_meeting"] },
-          resultText: "נפתח ערוץ חדש. לא ברור מי שולט בו.",
-          next: "s007"
+          id: "c",
+          label: "להביא את רוני זמנית",
+          result: "יש עזרה עכשיו. בעתיד זה יכול להתפוצץ.",
+          effects: { money: -1000, cashflow: 3, trust: -1, exposure: 2 },
+          clues: ["c036"],
+          delayed: [
+            { afterWeeks: 5, effects: { trust: -3, stress: 3 }, revealText: "רוני הזכירה שיש לה העתק מהמסמכים." }
+          ]
         }
       ]
     },
     {
-      id: "s003",
-      title: "הודעה ממשקיעה ותיקה",
-      text: ["היא כתבה: \"אפשר לקצר דרך?\"", "הטון מקצועי מדי, ואישי מדי."],
-      bullets: ["הזדמנות מהירה", "מסלול דק בין עניין ללחץ"],
+      id: "biz_partner",
+      minTurn: 6,
+      maxTurn: 120,
+      tags: ["business"],
+      title: "השותף עצבני",
+      text: ["השותף אומר שאתה מסתיר דברים.", "הוא רוצה לראות הכול."],
+      bullets: ["אמון בפנים נחלש"],
       choices: [
         {
-          id: "s003_c1",
-          label: "לקבוע פגישה רשמית בבוקר",
-          immediateEffects: { credibility: 6, stress: 2, energy: -2 },
-          flags: { set: ["investor_interest"] },
-          resultText: "שמרת מסגרת. המשחק עדיין פתוח.",
-          next: "s006"
+          id: "a",
+          label: "לפתוח הכול",
+          result: "כאב בטווח קצר. אמון חוזר קצת.",
+          effects: { trust: 6, stress: 2, money: -800 },
+          flags: { unset: ["partnerPressure"] }
         },
         {
-          id: "s003_c2",
-          label: "לענות בלילה ולזרז",
-          immediateEffects: { closeness: 8, exposure: 6, stress: 3 },
-          flags: { set: ["late_night_meeting"] },
-          clues: ["c02"],
-          resultText: "התגובה הייתה מהירה. המרחק הצטמצם.",
-          next: "s007"
+          id: "b",
+          label: "לתת רק חלק",
+          result: "הוא לא השתכנע.",
+          effects: { trust: -4, stress: 4, exposure: 2 },
+          flags: { set: ["partnerPressure"] },
+          clues: ["c021"]
         },
         {
-          id: "s003_c3",
-          label: "לשלוח תחזית אגרסיבית",
-          immediateEffects: { money: 700, exposure: 4, credibility: -3, portfolio: 4, stress: 4 },
-          delayed: [{ afterTurns: 2, effects: { cashflow: -4, stress: 3 }, revealText: "ביקשו הוכחה למספרים שהבטחת." }],
-          flags: { set: ["partner_pressure"] },
-          resultText: "יצרת רושם חזק. גם ציפייה מסוכנת.",
-          next: "s008"
+          id: "c",
+          label: "לעקוף אותו עם משקיע אחר",
+          result: "קיבלת כסף מהיר, אבל זה עשה רעש.",
+          effects: { money: 6000, exposure: 5, trust: -6, reputation: -2 },
+          flags: { set: ["highRiskMode"] }
         }
       ]
     },
     {
-      id: "s004",
-      title: "דסק הון מהיר",
-      text: ["ההצעה מונחת עד חצות.", "ריבית חדה, כסף מיידי."],
-      bullets: ["מהיר זה יקר", "הרשומות נשארות"],
+      id: "invest_hot_tip",
+      minTurn: 8,
+      maxTurn: 120,
+      tags: ["invest"],
+      title: "טיפ חם בקבוצה",
+      text: ["אומרים שזה בטוח.", "כולם נכנסים מהר."],
+      bullets: ["קל לפספס", "קל גם להישרף"],
       choices: [
         {
-          id: "s004_c1",
-          label: "לחתום על הלוואת גישור",
-          immediateEffects: { money: 3500, cashflow: 7, stress: 6, exposure: 6 },
-          delayed: [{ afterTurns: 3, effects: { money: -4200, cashflow: -12, stress: 8 }, revealText: "הריבית התחילה לנשוך.", clues: ["c20"] }],
-          flags: { set: ["legal_risk", "overdue_debt"] },
-          resultText: "פתרת את הלילה. הכנסת בוקר קשוח.",
-          next: "s008"
+          id: "a",
+          label: "להיכנס חזק",
+          result: "נכנסת מהר. עכשיו תחכה לתוצאה.",
+          effects: { money: -7000, investments: 7, stress: 4 },
+          delayed: [
+            { afterWeeks: 3, effects: { money: 16000, investments: 4, cashflow: 2 }, revealText: "הטיפ פגע. עשית סיבוב יפה.", clues: ["c038"] },
+            { afterWeeks: 6, effects: { exposure: 4, stress: 3 }, revealText: "שאלו מאיפה הגיע המידע." }
+          ]
         },
         {
-          id: "s004_c2",
-          label: "לבקש 24 שעות לבדיקה",
-          immediateEffects: { credibility: 4, energy: -2, stress: 1 },
-          resultText: "הרווחת זמן קצר לבדיקה עמוקה.",
-          next: "s009"
+          id: "b",
+          label: "להיכנס קטן",
+          result: "מהלך זהיר, פחות פחד.",
+          effects: { money: -2500, investments: 3, stress: 1 },
+          delayed: [
+            { afterWeeks: 3, effects: { money: 4300, cashflow: 2 }, revealText: "יצאת ברווח קטן." }
+          ]
         },
         {
-          id: "s004_c3",
-          label: "לקבוע פגישה פרטית במלון",
-          immediateEffects: { closeness: 10, exposure: 8, stress: 4 },
-          flags: { set: ["late_night_meeting"] },
-          clues: ["c19"],
-          resultText: "החדר היה שקט מדי בשביל עסקה רגילה.",
-          next: "s007"
+          id: "c",
+          label: "לוותר",
+          result: "לא הרווחת. גם לא נשרפת.",
+          effects: { stress: -1, trust: 1 }
         }
       ]
     },
     {
-      id: "s005",
-      title: "מיון לילה",
-      text: ["הבית מתקשר מהמסדרון.", "בדיוק עכשיו יש חלון למשקיע."],
-      bullets: ["משפחה מול פגישה קריטית", "אין בחירה נקייה"],
-      choices: [
-        {
-          id: "s005_c1",
-          label: "להעביר כסף עכשיו ולבטל פגישה",
-          immediateEffects: { money: -2300, energy: -6, stress: 8, cashflow: -4, credibility: 4 },
-          delayed: [{ afterTurns: 2, effects: { credibility: 3, stress: -2 }, revealText: "בבית זכרו שנשארת." }],
-          flags: { set: ["family_emergency", "promised_family_support"] },
-          resultText: "כיבית אש בבית. פתחת חור בעסק.",
-          next: "s010"
-        },
-        {
-          id: "s005_c2",
-          label: "לבקש דחייה בבית ולהופיע למשקיע",
-          immediateEffects: { cashflow: 4, credibility: -6, stress: 10, exposure: 2 },
-          flags: { set: ["family_emergency", "family_secret"] },
-          clues: ["c04"],
-          resultText: "שמעת את השתיקה בקו לפני שניתקת.",
-          next: "s011"
-        },
-        {
-          id: "s005_c3",
-          label: "לגייס מקדמה מהספק לטובת הבית",
-          immediateEffects: { money: 1400, cashflow: -3, stress: 7, exposure: 6 },
-          flags: { set: ["family_emergency", "legal_risk"] },
-          clues: ["c17"],
-          resultText: "סגרת חור אחד ופתחת שאלה משפטית.",
-          next: "s006"
-        }
-      ]
-    },
-    {
-      id: "s006",
-      title: "חוזה בלי סעיף",
-      text: ["הטיוטה נקייה מדי.", "שורה אחת חסרה במקום הלא נכון."],
-      bullets: ["חתימה מהירה תקנה מזומן", "בדיקה תעלה זמן"],
-      choices: [
-        {
-          id: "s006_c1",
-          label: "לעצור ולשלוח לעו\"ד",
-          immediateEffects: { credibility: 7, stress: 2, money: -600 },
-          flags: { set: ["mentor_warning"] },
-          clues: ["c05", "c08"],
-          resultText: "הקצב ירד. השליטה עלתה.",
-          next: "s009"
-        },
-        {
-          id: "s006_c2",
-          label: "לחתום מהר כדי לא לפספס",
-          immediateEffects: { money: 2200, cashflow: 6, exposure: 7, credibility: -5, stress: 6 },
-          delayed: [{ afterTurns: 2, effects: { exposure: 6, stress: 4 }, revealText: "מישהו הראה את המילה שנמחקה.", clues: ["c12"] }],
-          flags: { set: ["signed_term_sheet", "legal_risk"] },
-          resultText: "סגרת מהר. האוויר בחדר השתנה.",
-          next: "s013"
-        },
-        {
-          id: "s006_c3",
-          label: "לבקש הסבר אחד על אחד",
-          immediateEffects: { closeness: 7, exposure: 5, credibility: 1, stress: 3 },
-          flags: { set: ["late_night_meeting"] },
-          resultText: "קיבלת תשובה. קיבלת גם מבט נוסף.",
-          next: "s012"
-        }
-      ]
-    },
-    {
-      id: "s007",
-      title: "קפה אחרי חצות",
-      text: ["השיחה עברה ממספרים לשתיקות.", "הכיסא שלה קרוב מדי."],
-      bullets: ["משיכה כמנוף", "גבולות נבחנים"],
-      choices: [
-        {
-          id: "s007_c1",
-          label: "לשמור מרחק ולחזור לנתונים",
-          immediateEffects: { credibility: 5, closeness: -2, stress: 1, exposure: -1 },
-          flags: { set: ["late_night_meeting"] },
-          resultText: "המתח נשאר. השליטה נשארה אצלך.",
-          next: "s011"
-        },
-        {
-          id: "s007_c2",
-          label: "לאפשר קרבה כדי לקדם עסקה",
-          immediateEffects: { closeness: 14, exposure: 9, stress: 4, credibility: -3 },
-          flags: { set: ["crossed_boundary", "late_night_meeting"] },
-          clues: ["c13"],
-          resultText: "העסקה נפתחה. גם גבול נסדק.",
-          next: "s012"
-        },
-        {
-          id: "s007_c3",
-          label: "לשתף סוד משפחתי כדי לרכך",
-          immediateEffects: { closeness: 10, exposure: 7, stress: 5, credibility: -2 },
-          flags: { set: ["family_secret"] },
-          clues: ["c23"],
-          resultText: "היא הקשיבה. אתה איבדת שכבה.",
-          next: "s015"
-        }
-      ]
-    },
-    {
-      id: "s008",
-      title: "פער שכר בצוות",
-      text: ["מחר יום תשלום.", "היתרה לא מכסה את כל השמות."],
-      bullets: ["אמון פנימי", "תזרים מול מורל"],
-      choices: [
-        {
-          id: "s008_c1",
-          label: "למשוך מהשקעות ולשלם",
-          immediateEffects: { money: 1000, portfolio: -6, cashflow: 5, stress: 3 },
-          delayed: [{ afterTurns: 2, effects: { cashflow: -4, portfolio: -2 }, revealText: "התיק נחלש בדיוק כשצריך כרית." }],
-          resultText: "הצוות נרגע. השוק פתח חוב חדש.",
-          next: "s010"
-        },
-        {
-          id: "s008_c2",
-          label: "לדחות בונוסים ולדבר שקוף",
-          immediateEffects: { cashflow: 2, credibility: 4, stress: 4, energy: -2 },
-          resultText: "לא כולם אהבו, אבל שמעו אותך עד הסוף.",
-          next: "s013"
-        },
-        {
-          id: "s008_c3",
-          label: "להציע אופציות במקום",
-          immediateEffects: { cashflow: 6, credibility: -2, stress: 5, exposure: 3 },
-          delayed: [{ afterTurns: 3, effects: { credibility: -3, stress: 2 }, revealText: "לא כולם קנו את ההבטחה." }],
-          flags: { set: ["partner_pressure"] },
-          resultText: "נשאר כסף בקופה. נשאר ספק בחדר.",
-          next: "s014"
-        }
-      ]
-    },
-    {
-      id: "s009",
-      title: "חדר בדיקת נאותות",
-      text: ["ארבע תיקיות. שעה אחת.", "מישהו קיווה שלא תגיע לעמוד האחרון."],
-      bullets: ["סימנים קטנים", "החלטה על עומק"],
-      choices: [
-        {
-          id: "s009_c1",
-          label: "לחפור עד הסוף",
-          immediateEffects: { energy: -5, stress: 5, credibility: 6 },
-          flags: { set: ["found_red_flags", "hidden_document"] },
-          clues: ["c01", "c16"],
-          resultText: "מצאת משהו שלא היה אמור להיות שם.",
-          next: { type: "conditional", rules: [{ if: { flagsAll: ["found_red_flags"] }, goto: "s019" }], default: "s013" }
-        },
-        {
-          id: "s009_c2",
-          label: "בדיקה חלקית ולהמשיך",
-          immediateEffects: { money: 1500, portfolio: 4, exposure: 4, stress: 3 },
-          delayed: [{ afterTurns: 3, effects: { cashflow: -8, exposure: 5 }, revealText: "פער שלא בדקת חזר אליך.", clues: ["c10"] }],
-          resultText: "חסכת זמן. קנית אי ודאות.",
-          next: "s013"
-        },
-        {
-          id: "s009_c3",
-          label: "לתת לה להוביל את הבדיקה",
-          immediateEffects: { closeness: 8, exposure: 6, energy: 1, credibility: -1 },
-          flags: { set: ["late_night_meeting"] },
-          clues: ["c24"],
-          resultText: "העבודה זרמה. השליטה זזה ממך.",
-          next: "s012"
-        }
-      ]
-    },
-    {
-      id: "s010",
-      title: "בקשה מאחיך",
-      text: ["הוא צריך כסף מיידי.", "מחר בבוקר יש לך קמפיין תשלום."],
-      bullets: ["משפחה מול צמיחה", "זמן קצר להחליט"],
-      choices: [
-        {
-          id: "s010_c1",
-          label: "להלוות לו ולחתוך קמפיין",
-          immediateEffects: { money: -1700, cashflow: -5, credibility: 3, stress: 6 },
-          flags: { set: ["borrowed_from_family", "promised_family_support"] },
-          resultText: "בחרת בית. העסק שילם את המחיר.",
-          next: "s015"
-        },
-        {
-          id: "s010_c2",
-          label: "לסרב ולשמור תקציב לעסק",
-          immediateEffects: { cashflow: 4, credibility: -4, stress: 5 },
-          flags: { set: ["family_secret"] },
-          resultText: "המספרים נשמרו. הקול שלו לא.",
-          next: "s011"
-        },
-        {
-          id: "s010_c3",
-          label: "לצרף אותו לעבודה זמנית",
-          immediateEffects: { money: -400, cashflow: 2, stress: 4, exposure: 3, credibility: -1 },
-          delayed: [{ afterTurns: 2, effects: { energy: -3, stress: 3 }, revealText: "בית ועסק התחילו להתערבב." }],
-          flags: { set: ["family_secret"] },
-          resultText: "פתרת את הלילה. העלית סיכון חדש.",
-          next: "s016"
-        }
-      ]
-    },
-    {
-      id: "s011",
-      title: "שמועה בחלל עבודה",
-      text: ["השם שלך עלה בשולחן הלא נכון.", "מישהו מחבר נקודות."],
-      bullets: ["תדמית נשחקת מהר", "תגובה לא מדויקת תדליק אש"],
-      choices: [
-        {
-          id: "s011_c1",
-          label: "להכחיש פומבית",
-          immediateEffects: { exposure: -3, credibility: 3, stress: 3, energy: -2 },
-          resultText: "הרעש ירד לרגע. המבטים נשארו.",
-          next: "s016"
-        },
-        {
-          id: "s011_c2",
-          label: "לשתוק ולחכות",
-          immediateEffects: { stress: 1, exposure: 6, credibility: -2 },
-          delayed: [{ afterTurns: 2, effects: { exposure: 5 }, revealText: "השתיקה יצרה גרסה משלה.", clues: ["c15"] }],
-          resultText: "לא נגעת. השמועה כן.",
-          next: "s017"
-        },
-        {
-          id: "s011_c3",
-          label: "לברר מי הדליף",
-          immediateEffects: { energy: -4, stress: 5 },
-          flags: { set: ["rumor_active"] },
-          clues: ["c18"],
-          resultText: "גילית רשת קטנה של לחישות.",
-          next: "s018"
-        }
-      ]
-    },
-    {
-      id: "s012",
-      title: "דלת סגורה במשרד",
-      text: ["היא ביקשה שיחה בלי עדים.", "החדר קרוב מדי ושקט מדי."],
-      bullets: ["גבול מקצועי", "כוח דרך קרבה"],
-      choices: [
-        {
-          id: "s012_c1",
-          label: "להשאיר דלת פתוחה",
-          immediateEffects: { credibility: 5, closeness: -1, exposure: -2, stress: 1 },
-          resultText: "סימנת גבול ברור. לא כולם אוהבים גבולות.",
-          next: "s017"
-        },
-        {
-          id: "s012_c2",
-          label: "לנעול דלת ל\"שיחה פרטית\"",
-          immediateEffects: { closeness: 15, exposure: 10, stress: 6, credibility: -4 },
-          flags: { set: ["crossed_boundary"] },
-          clues: ["c07"],
-          resultText: "המרחק נעלם. גם השוליים.",
-          next: "s020"
-        },
-        {
-          id: "s012_c3",
-          label: "לבקש ממנה להתרחק שבוע",
-          immediateEffects: { closeness: -6, stress: 4, credibility: 2 },
-          flags: { set: ["jealousy_triggered"] },
-          resultText: "הקרבה נבלמה. המתח לא.",
-          next: "s017"
-        }
-      ]
-    },
-    {
-      id: "s013",
-      title: "טיוטת תנאי השקעה",
-      text: ["המספרים מפתים.", "האותיות הקטנות עוד יותר."],
-      bullets: ["מהירות מול הגנה", "אמון מול פיתוי"],
-      choices: [
-        {
-          id: "s013_c1",
-          label: "לדרוש סעיפי הגנה",
-          immediateEffects: { credibility: 6, stress: 3, money: -500 },
-          flags: { set: ["investor_interest"] },
-          resultText: "העסקה האטה. השליטה גדלה.",
-          next: "s018"
-        },
-        {
-          id: "s013_c2",
-          label: "לחתום ולסגור היום",
-          immediateEffects: { money: 3000, cashflow: 8, exposure: 5, credibility: -3 },
-          delayed: [{ afterTurns: 3, effects: { cashflow: -6, stress: 4 }, revealText: "הסעיפים הפעילו לחץ תזרימי.", clues: ["c12"] }],
-          flags: { set: ["signed_term_sheet"] },
-          resultText: "החתימה נסגרה. השקט היה קצר.",
-          next: "s019"
-        },
-        {
-          id: "s013_c3",
-          label: "לדחות ולתת זמן לבית",
-          immediateEffects: { energy: 3, stress: -3, cashflow: -2, credibility: 1 },
-          flags: { set: ["promised_family_support", "family_emergency_resolved"] },
-          resultText: "ויתרת על קצב לטובת קשרים.",
-          next: "s021"
-        }
-      ]
-    },
-    {
-      id: "s014",
+      id: "invest_leverage",
+      minTurn: 12,
+      maxTurn: 120,
+      tags: ["invest"],
       title: "פיתוי מינוף",
-      text: ["מכשיר חדש, תנאים נוצצים.", "הפסד קטן שם מוחק חודש."],
-      bullets: ["מינוף מגדיל הכול", "גם טעות"],
+      text: ["בנק מציע לך מינוף ללילה.", "רווח גדול או בור גדול."],
+      bullets: ["סיכון גבוה מאוד"],
       choices: [
         {
-          id: "s014_c1",
-          label: "מינוף מתון עם הגנות",
-          immediateEffects: { money: 1800, portfolio: 6, stress: 4, exposure: 3 },
-          delayed: [{ afterTurns: 2, effects: { cashflow: 4, portfolio: 2 }, revealText: "המינוף עבד זמנית לטובתך." }],
-          resultText: "קיבלת דחיפה. עדיין בשליטה.",
-          next: "s018"
+          id: "a",
+          label: "לקחת מינוף",
+          result: "קפצת גבוה. זה יכול להכאיב מהר.",
+          effects: { money: 10000, investments: 6, stress: 7, exposure: 5 },
+          flags: { set: ["highRiskMode", "legalRisk"] },
+          clues: ["c027"]
         },
         {
-          id: "s014_c2",
-          label: "מינוף אגרסיבי על הכול",
-          immediateEffects: { money: 5200, portfolio: 12, stress: 10, exposure: 8 },
-          delayed: [{ afterTurns: 2, effects: { cashflow: -14, stress: 8, exposure: 6 }, revealText: "המרווח נסגר מולך.", clues: ["c09", "c22"] }],
-          flags: { set: ["legal_risk"] },
-          resultText: "הקפיצה מרשימה. הנחיתה פחות.",
-          next: "s021"
+          id: "b",
+          label: "מינוף קטן עם גבול",
+          result: "הרווח נמוך יותר אבל אתה עוד שולט.",
+          effects: { money: 3600, investments: 3, stress: 2, exposure: 1 }
         },
         {
-          id: "s014_c3",
-          label: "לוותר ולשמור נזילות",
-          immediateEffects: { money: -500, portfolio: -2, cashflow: 6, stress: -2, credibility: 2 },
-          resultText: "בחרת יציבות על פני סיפור גדול.",
-          next: "s022"
+          id: "c",
+          label: "לא לגעת",
+          result: "פספסת הזדמנות, שמרת על הראש.",
+          effects: { stress: -2, trust: 1 }
         }
       ]
     },
     {
-      id: "s015",
+      id: "property_first",
+      minTurn: 14,
+      maxTurn: 120,
+      tags: ["property"],
+      title: "דירה קטנה למכירה",
+      text: ["יש דירה במחיר טוב יחסית.", "צריך להחליט מהר."],
+      bullets: ["נכס לטווח ארוך", "חוב קצר טווח"],
+      choices: [
+        {
+          id: "a",
+          label: "לקנות עם הון עצמי",
+          result: "קנית נכס בלי חוב גדול.",
+          effects: { money: -90000, assets: 120000, family: 5, reputation: 3 },
+          clues: ["c016"]
+        },
+        {
+          id: "b",
+          label: "לקנות עם הלוואה",
+          result: "קנית, אבל נכנסת לחוב חודשי.",
+          effects: { money: -25000, assets: 140000, debts: 85000, stress: 4, family: 4 },
+          flags: { set: ["legalRisk"] }
+        },
+        {
+          id: "c",
+          label: "לוותר",
+          result: "שמעת לעצמך. אולי עוד תצטער.",
+          effects: { stress: -1, cashflow: 1 }
+        }
+      ]
+    },
+    {
+      id: "property_tenant",
+      minTurn: 20,
+      maxTurn: 120,
+      tags: ["property"],
+      title: "דייר עושה בעיות",
+      text: ["הדייר לא שילם חודש.", "הוא גם מאיים ללכלך עליך."],
+      bullets: ["כסף תקוע", "תדמית בסיכון"],
+      requiresAnyFlag: ["businessOpened"],
+      choices: [
+        {
+          id: "a",
+          label: "לתת עוד זמן",
+          result: "הרווחת שקט קצר.",
+          effects: { money: -2500, stress: 2, family: -1 }
+        },
+        {
+          id: "b",
+          label: "ללכת לעורך דין",
+          result: "דרך יקרה, אבל מסודרת.",
+          effects: { money: -4000, trust: 2, exposure: -1 },
+          clues: ["c040"]
+        },
+        {
+          id: "c",
+          label: "ללחוץ עליו חזק",
+          result: "הוא נבהל. גם התחיל לדבר.",
+          effects: { money: 1500, exposure: 5, reputation: -3, stress: 4 },
+          clues: ["c029"]
+        }
+      ]
+    },
+    {
+      id: "family_call",
+      minTurn: 1,
+      maxTurn: 120,
+      tags: ["family"],
       title: "שיחה מהבית",
-      text: ["\"איך אתה באמת?\"", "השאלה נשמעת פשוטה מדי."],
-      bullets: ["הסתרה שוחקת", "כנות עולה מחיר"],
+      text: ["מבקשים ממך כסף דחוף.", "אם לא תעזור, זה יתפוצץ."],
+      bullets: ["לב מול מספרים"],
       choices: [
         {
-          id: "s015_c1",
-          label: "לספר אמת חלקית",
-          immediateEffects: { stress: -2, credibility: 3, energy: 2 },
-          flags: { set: ["family_secret"] },
-          clues: ["c04"],
-          resultText: "אמרת מספיק כדי לא לשקר לגמרי.",
-          next: "s022"
+          id: "a",
+          label: "להעביר כסף",
+          result: "הבית נרגע. העסק לוחץ.",
+          effects: { money: -3000, family: 7, stress: 2, cashflow: -2 },
+          flags: { set: ["familyNeedCash"] },
+          clues: ["c020"]
         },
         {
-          id: "s015_c2",
-          label: "להבטיח תמיכה חודשית",
-          immediateEffects: { money: -1200, cashflow: -4, stress: 5, credibility: 4 },
-          delayed: [{ afterTurns: 3, effects: { money: -1200, stress: 4 }, revealText: "ההתחייבות חזרה שוב בסוף החודש." }],
-          flags: { set: ["promised_family_support", "family_emergency"] },
-          resultText: "קיבלת שקט קצר בבית.",
-          next: "s016"
+          id: "b",
+          label: "להגיד שאין עכשיו",
+          result: "חסכת כסף. הבית נפגע.",
+          effects: { family: -6, stress: 5, trust: -2 }
         },
         {
-          id: "s015_c3",
-          label: "לנתק ולחזור לעסק",
-          immediateEffects: { energy: 1, stress: 7, credibility: -5, exposure: 2 },
-          flags: { set: ["family_secret"] },
-          resultText: "חזרת לעבודה. הלחץ נשאר איתך.",
-          next: "s017"
+          id: "c",
+          label: "לבקש עזרה ממאיה",
+          result: "היא עזרה מהר. זה קרב ביניכם.",
+          effects: { relationship: 6, exposure: 4, trust: -2 },
+          clues: ["c030"]
         }
       ]
     },
     {
-      id: "s016",
-      title: "הודעה: \"יש צילום\"",
-      text: ["קובץ קטן הגיע בלי שם שולח.", "מישהו מחכה שתיבהל."],
-      bullets: ["שליטה בנרטיב", "זמן תגובה קצר"],
+      id: "family_school",
+      minTurn: 24,
+      maxTurn: 120,
+      tags: ["family"],
+      title: "תשלום לבית ספר",
+      text: ["הגיע חיוב גדול מהמסגרת של הילד.", "זה לא יכול לחכות."],
+      bullets: ["עומס חודשי"],
+      requiresFlagsAll: ["hasKids"],
       choices: [
         {
-          id: "s016_c1",
-          label: "לפנות ישירות ולבקש מחיקה",
-          immediateEffects: { exposure: -4, stress: 4, credibility: 1 },
-          flags: { set: ["leaked_screenshot"] },
-          clues: ["c03"],
-          resultText: "השיחה הייתה קצרה. האיום נשאר באוויר.",
-          next: { type: "conditional", rules: [{ if: { cluesAll: ["c03", "c15"] }, goto: "s021" }], default: "s017" }
+          id: "a",
+          label: "לשלם מלא",
+          result: "שילמת בזמן. הלחץ ירד בבית.",
+          effects: { money: -4200, family: 6, stress: -1 }
         },
         {
-          id: "s016_c2",
-          label: "לאיים משפטית מיד",
-          immediateEffects: { exposure: 2, stress: 6, credibility: -3 },
-          flags: { set: ["legal_risk"] },
-          clues: ["c08"],
-          resultText: "שידרת כוח. גם סימנת יעד.",
-          next: "s021"
+          id: "b",
+          label: "לבקש פריסה",
+          result: "קיבלת פריסה, אבל זה ילווה אותך.",
+          effects: { debts: 3000, family: -2, stress: 3 },
+          clues: ["c041"]
         },
         {
-          id: "s016_c3",
-          label: "לשלם כדי לקבור את זה",
-          immediateEffects: { money: -1800, exposure: -2, stress: 3, credibility: -4 },
-          delayed: [{ afterTurns: 2, effects: { exposure: 8 }, revealText: "הצילום הופיע בכל זאת.", clues: ["c11"] }],
-          flags: { set: ["legal_risk"] },
-          resultText: "קנית שקט שנשבר מהר.",
-          next: "s017"
+          id: "c",
+          label: "לדחות ולסגור בעבודה",
+          result: "הבית הבין מה הבנת קודם: אתה לא שם.",
+          effects: { family: -7, trust: -4, reputation: 2, stress: 5 },
+          clues: ["c044"]
         }
       ]
     },
     {
-      id: "s017",
-      title: "אולטימטום מהשותף",
-      text: ["\"או שקיפות מלאה, או שאני בחוץ\".", "הוא רציני."],
-      bullets: ["אמון פנימי קריטי", "עקיפה תעלה ביוקר"],
+      id: "romance_message",
+      minTurn: 10,
+      maxTurn: 120,
+      tags: ["romance"],
+      title: "הודעה ממאיה בלילה",
+      text: ["\"אתה ער?\"", "הטלפון שלך על השולחן בבית."],
+      bullets: ["צעד קטן יכול להיות גדול"],
       choices: [
         {
-          id: "s017_c1",
-          label: "לפתוח ספרים ולשתף",
-          immediateEffects: { credibility: 7, stress: 3, energy: -2 },
-          flags: { unset: ["partner_pressure"] },
-          resultText: "החדר התקרר. השותפות נותרה בחיים.",
-          next: "s019"
+          id: "a",
+          label: "לענות ולהמשיך לדבר",
+          result: "השיחה התחממה מהר.",
+          effects: { relationship: 8, exposure: 4, stress: 2 },
+          flags: { set: ["lateNightPattern"] },
+          clues: ["c003", "c013"],
+          suspicion: 7
         },
         {
-          id: "s017_c2",
-          label: "לעקוף אותו עם משקיע חיצוני",
-          immediateEffects: { money: 1200, exposure: 5, credibility: -6, stress: 5 },
-          flags: { set: ["partner_pressure", "investor_interest"] },
-          resultText: "השגת כסף. איבדת שכבת אמון.",
-          next: "s023"
+          id: "b",
+          label: "לענות קצר ולעצור",
+          result: "שמרת גבול דק.",
+          effects: { relationship: 3, exposure: 1, stress: 1 }
         },
         {
-          id: "s017_c3",
-          label: "לרכך דרך מפגש טעון",
-          immediateEffects: { closeness: 9, exposure: 7, stress: 4, credibility: -2 },
-          flags: { set: ["crossed_boundary", "jealousy_triggered"] },
-          resultText: "הוויכוח נמס. המחיר נדחה.",
-          next: "s024"
+          id: "c",
+          label: "לא לענות",
+          result: "נשאר שקט. לא נעים.",
+          effects: { relationship: -2, trust: 1 }
         }
       ]
     },
     {
-      id: "s018",
-      title: "איזון תיק השקעות",
-      text: ["שוק תנודתי. החלטה שקטה או הימור.", "כל תנועה תיגע בתזרים בעוד יומיים."],
-      bullets: ["ניהול סיכון", "תוצאה מושהית"],
+      id: "romance_meeting",
+      minTurn: 16,
+      maxTurn: 120,
+      tags: ["romance"],
+      title: "פגישה פרטית במשרד",
+      text: ["הדלת נסגרת מאחוריכם.", "המרחק ביניכם קצר מדי."],
+      bullets: ["הכול יכול לצאת משליטה"],
       choices: [
         {
-          id: "s018_c1",
-          label: "מסלול הגנתי",
-          immediateEffects: { portfolio: 4, cashflow: 3, stress: -2, money: -600 },
-          delayed: [{ afterTurns: 2, effects: { cashflow: 5, stress: -1 }, revealText: "ההגנה שחררה קצת תזרים." }],
-          resultText: "מתון, אבל יציב.",
-          next: "s023"
+          id: "a",
+          label: "לשמור מקצועי",
+          result: "עצרת בזמן.",
+          effects: { trust: 3, relationship: -1, stress: 1 }
         },
         {
-          id: "s018_c2",
-          label: "כניסה חדה לסקטור חם",
-          immediateEffects: { money: 2100, portfolio: 8, stress: 5, exposure: 4 },
-          delayed: [{ afterTurns: 2, effects: { cashflow: -7, stress: 5 }, revealText: "הסקטור זז נגדך ביום הלא נכון.", clues: ["c06"] }],
-          resultText: "עלית מהר. הרצפה רועדת.",
-          next: "s025"
+          id: "b",
+          label: "להתקרב עוד",
+          result: "המתח נהיה אמיתי.",
+          effects: { relationship: 11, exposure: 7, stress: 3 },
+          flags: { set: ["affairActive", "isDating"] },
+          clues: ["c019", "c025"],
+          suspicion: 12
         },
         {
-          id: "s018_c3",
-          label: "להקפיא מסחר לשבוע",
-          immediateEffects: { energy: 4, stress: -4, portfolio: -1, cashflow: 1 },
-          resultText: "נשימה קצרה לפני סבב הבא.",
-          next: "s021"
-        }
-      ]
-    },
-    {
-      id: "s019",
-      title: "נספח מוסתר",
-      text: ["קובץ נוסף נקרא \"טיוטה סופית_2\".", "החתימות לא נראות אותו דבר."],
-      bullets: ["להדליק אור", "או להחביא עוד"],
-      choices: [
-        {
-          id: "s019_c1",
-          label: "לחשוף לשותף מיד",
-          immediateEffects: { credibility: 6, stress: 3, exposure: 2 },
-          flags: { set: ["hidden_document"] },
-          clues: ["c10", "c12"],
-          resultText: "שיתפת מוקדם. נוצר קו הגנה.",
-          next: "s021"
-        },
-        {
-          id: "s019_c2",
-          label: "להסתיר ולהתקדם",
-          immediateEffects: { money: 2000, cashflow: 4, credibility: -7, stress: 5 },
-          delayed: [{ afterTurns: 3, effects: { exposure: 7 }, revealText: "המסמך צף אצל מישהו אחר.", clues: ["c01"] }],
-          flags: { set: ["hidden_document"] },
-          resultText: "המספרים הסתדרו. העקבות נשארו.",
-          next: "s024"
-        },
-        {
-          id: "s019_c3",
-          label: "להעביר רק אליה",
-          immediateEffects: { closeness: 11, exposure: 8, credibility: -3, stress: 4 },
-          flags: { set: ["hidden_document", "crossed_boundary"] },
-          clues: ["c01", "c24"],
-          resultText: "יצרת ברית פרטית. צמצמת מרחב תמרון.",
-          next: "s026"
-        }
-      ]
-    },
-    {
-      id: "s020",
-      title: "הודעת קנאה ב-01:37",
-      text: ["\"ראיתי אותך היום\".", "שלוש נקודות. בלי הסבר."],
-      bullets: ["קנאה יכולה להדליק עסקה", "או לחשוף הכול"],
-      choices: [
-        {
-          id: "s020_c1",
-          label: "לענות ברוגע ולהרגיע",
-          immediateEffects: { closeness: 4, stress: 2, exposure: 3 },
-          flags: { set: ["jealousy_triggered"] },
-          clues: ["c21"],
-          resultText: "הטון ירד, אבל המעקב נשאר.",
-          next: "s024"
-        },
-        {
-          id: "s020_c2",
-          label: "להשתמש בקנאה כדי לסגור התחייבות",
-          immediateEffects: { money: 1500, closeness: 10, exposure: 9, credibility: -4, stress: 6 },
-          flags: { set: ["jealousy_triggered", "crossed_boundary"] },
-          resultText: "קיבלת הבטחה. נתת מפתח.",
-          next: "s025"
-        },
-        {
-          id: "s020_c3",
-          label: "להתעלם",
-          immediateEffects: { closeness: -5, stress: 5, exposure: 4, credibility: 1 },
-          resultText: "השקט נראה כמו תשובה.",
-          next: "s026"
-        }
-      ]
-    },
-    {
-      id: "s021",
-      title: "שיחת עו\"ד קצרה",
-      text: ["שלוש דקות. שני סיכונים.", "העצה ברורה, לא זולה."],
-      bullets: ["תגובה מוקדמת חוסכת כאב", "דחייה מסכנת חשיפה"],
-      choices: [
-        {
-          id: "s021_c1",
-          label: "לפתוח תיק הגנה עכשיו",
-          immediateEffects: { money: -1300, cashflow: -2, credibility: 4, exposure: -5, stress: 2 },
-          flags: { set: ["mentor_warning", "legal_risk"] },
-          clues: ["c08", "c20"],
-          resultText: "שילמת עכשיו כדי לא לשלם כפול.",
-          next: "s023"
-        },
-        {
-          id: "s021_c2",
-          label: "לחכות ולחסוך כסף",
-          immediateEffects: { cashflow: 2, exposure: 6, stress: 5, credibility: -2 },
-          flags: { set: ["legal_risk"] },
-          resultText: "הקופה נשמרה. ההגנה לא.",
-          next: "s026"
-        },
-        {
-          id: "s021_c3",
-          label: "לשלוח מסר פרטי במקום מכתב",
-          immediateEffects: { closeness: 7, exposure: 7, stress: 3, credibility: -3 },
-          flags: { set: ["crossed_boundary"] },
-          resultText: "עקפת את הדרך הרשמית. גם את הגבול.",
-          next: "s027"
-        }
-      ]
-    },
-    {
-      id: "s022",
-      title: "העברה דחופה לבית",
-      text: ["צריך סכום עוד הלילה.", "בבוקר מחכה חשבון ספקים."],
-      bullets: ["חיתוך דו-כיווני", "תשלום אחד לא מכסה הכול"],
-      choices: [
-        {
-          id: "s022_c1",
-          label: "להעביר הכול ולדחות ספקים",
-          immediateEffects: { money: -2600, cashflow: -7, stress: 8, credibility: 3 },
-          delayed: [{ afterTurns: 2, effects: { stress: -2, credibility: 2 }, revealText: "בבית זכרו מי עמד מולם." }],
-          flags: { set: ["family_emergency", "promised_family_support"] },
-          resultText: "שמעת תודה בבית. כעס בעסק.",
-          next: "s027"
-        },
-        {
-          id: "s022_c2",
-          label: "לחלק חצי-חצי",
-          immediateEffects: { money: -1400, cashflow: -2, stress: 5, credibility: 1 },
-          flags: { set: ["family_emergency"] },
-          resultText: "אף צד לא קיבל הכול. שניהם קיבלו מעט.",
-          next: "s023"
-        },
-        {
-          id: "s022_c3",
-          label: "לקחת גישור לשני הצדדים",
-          immediateEffects: { money: 2200, cashflow: 3, stress: 7, exposure: 5 },
-          delayed: [{ afterTurns: 3, effects: { money: -2500, cashflow: -8 }, revealText: "ההחזר פגע בבית ובעסק יחד." }],
-          flags: { set: ["family_emergency", "legal_risk", "overdue_debt"] },
-          resultText: "פתרת את הרגע. חיזקת את הלחץ הבא.",
-          next: "s025"
-        }
-      ]
-    },
-    {
-      id: "s023",
-      title: "חדר ישיבות לילי",
-      text: ["הלוח מלא מספרים.", "העיניים על מי ימצמץ ראשון."],
-      bullets: ["תנאי עסקה אחרונים", "נוכחות שקטה בחדר"],
-      choices: [
-        {
-          id: "s023_c1",
-          label: "עסקה שקופה ואיטית",
-          immediateEffects: { money: 900, cashflow: 4, credibility: 5, stress: 2, exposure: -2 },
-          resultText: "זה לא נוצץ, אבל מחזיק מים.",
-          next: "s028"
-        },
-        {
-          id: "s023_c2",
-          label: "תחזית אגרסיבית לסגירה מהירה",
-          immediateEffects: { money: 2600, cashflow: 6, credibility: -4, stress: 5, exposure: 4 },
-          delayed: [{ afterTurns: 2, effects: { credibility: -4 }, revealText: "נדרשה הוכחה שלא הייתה אצלך.", clues: ["c16"] }],
-          flags: { set: ["signed_term_sheet"] },
-          resultText: "המספרים עבדו על החדר. לא על הזמן.",
-          next: "s028"
-        },
-        {
-          id: "s023_c3",
-          label: "לבקש שיחה לבד במסדרון",
-          immediateEffects: { closeness: 8, exposure: 6, stress: 3 },
-          flags: { set: ["late_night_meeting"] },
-          resultText: "הדיון יצא מהשולחן ונכנס לאזור אפור.",
-          next: "s024"
-        }
-      ]
-    },
-    {
-      id: "s024",
-      title: "מרפסת מלון, רוח קרה",
-      text: ["היא קרובה מדי בשביל חוזה.", "המילים קצרות, הכוונות כבדות."],
-      bullets: ["משיכה", "מינוף", "סיכון הדדי"],
-      choices: [
-        {
-          id: "s024_c1",
-          label: "לשמור קו מקצועי",
-          immediateEffects: { credibility: 5, closeness: -2, exposure: -1, stress: 2 },
-          resultText: "שמעת את האכזבה, אבל שמרת ציר נקי.",
-          next: "s028"
-        },
-        {
-          id: "s024_c2",
-          label: "להתקרב ולסגור בלחישה",
-          immediateEffects: { closeness: 14, exposure: 10, stress: 5, credibility: -3 },
-          flags: { set: ["crossed_boundary", "late_night_meeting"] },
-          clues: ["c02", "c19"],
-          resultText: "היא חייכה. המחיר נדחה לשלב הבא.",
-          next: { type: "conditional", rules: [{ if: { stats: { closeness: { gte: 70 } }, cluesAll: ["c07", "c02"] }, goto: "s029" }], default: "s028" }
-        },
-        {
-          id: "s024_c3",
-          label: "לחשוף רמז על מסמך",
-          immediateEffects: { closeness: 9, exposure: 8, credibility: -2, stress: 4 },
-          flags: { set: ["hidden_document"] },
-          clues: ["c01"],
-          resultText: "הקלף נפתח. אי אפשר להחזיר אותו לכיס.",
-          next: "s029"
-        }
-      ]
-    },
-    {
-      id: "s025",
-      title: "לחץ נזילות לפני בוקר",
-      text: ["עוד שעתיים נסגרת מסגרת.", "הבחירה היא מחיר או זמן."],
-      bullets: ["תזרים מיידי", "עלות מושהית"],
-      choices: [
-        {
-          id: "s025_c1",
-          label: "למכור הפסדים עכשיו",
-          immediateEffects: { money: 1700, portfolio: -8, cashflow: 5, stress: 4 },
-          delayed: [{ afterTurns: 2, effects: { cashflow: -6, stress: 3 }, revealText: "הנזילות המהירה חזרה כמו קנס." }],
-          resultText: "הבוקר ניצל. המחר נפגע.",
-          next: "s028"
-        },
-        {
-          id: "s025_c2",
-          label: "לקחת מינוף נוסף ללילה",
-          immediateEffects: { money: 2800, portfolio: 7, cashflow: 4, stress: 8, exposure: 7 },
-          delayed: [{ afterTurns: 2, effects: { cashflow: -12, stress: 9 }, revealText: "הלילה נסגר, החוב נפתח.", clues: ["c22"] }],
-          flags: { set: ["legal_risk"] },
-          resultText: "הכנסת אוויר בצינור צר מדי.",
-          next: "s030"
-        },
-        {
-          id: "s025_c3",
-          label: "לעצור ולבקש דחייה",
-          immediateEffects: { cashflow: -3, credibility: 2, stress: 2, energy: 1 },
-          resultText: "הפסדת גובה, הרווחת נשימה קצרה.",
-          next: "s026"
-        }
-      ]
-    },
-    {
-      id: "s026",
-      title: "פנייה מעיתונאית",
-      text: ["היא יודעת יותר ממה שפרסמו.", "השאלה הראשונה כבר נשלחה."],
-      bullets: ["תגובה רשמית", "או משחק כפול"],
-      choices: [
-        {
-          id: "s026_c1",
-          label: "תגובה רשמית קצרה",
-          immediateEffects: { exposure: -3, credibility: 4, stress: 3 },
-          clues: ["c18"],
-          resultText: "לא נתת כותרת. אולי דחית אותה.",
-          next: "s029"
-        },
-        {
-          id: "s026_c2",
-          label: "להדליף עליה מידע נגדי",
-          immediateEffects: { exposure: 7, credibility: -5, stress: 5 },
-          flags: { set: ["legal_risk"] },
-          clues: ["c03"],
-          resultText: "המהלך היה חד. גם מסוכן.",
-          next: "s029"
-        },
-        {
-          id: "s026_c3",
-          label: "להזמין לשיחה פרטית אחרי שעות",
-          immediateEffects: { closeness: 8, exposure: 9, stress: 4, credibility: -2 },
-          flags: { set: ["late_night_meeting", "crossed_boundary"] },
-          resultText: "הכותרת נדחתה. נפתח ערוץ טעון.",
-          next: "s030"
-        }
-      ]
-    },
-    {
-      id: "s027",
-      title: "ארוחת שישי, שתיקה כבדה",
-      text: ["כולם סביב השולחן.", "אף אחד לא שואל ישירות."],
-      bullets: ["אמון ביתי", "זמן מול אחריות"],
-      choices: [
-        {
-          id: "s027_c1",
-          label: "לפתוח הכול ולבקש אמון",
-          immediateEffects: { credibility: 6, stress: 4, energy: -3 },
-          flags: { set: ["family_secret", "family_emergency_resolved"] },
-          clues: ["c23"],
-          resultText: "היה קשה, אבל שקט אמיתי חזר לשולחן.",
-          next: "s028"
-        },
-        {
-          id: "s027_c2",
-          label: "להסתיר ולעבור נושא",
-          immediateEffects: { credibility: -4, stress: 6, exposure: 3 },
-          flags: { set: ["family_secret"] },
-          resultText: "המבטים נמשכו גם אחרי הקינוח.",
-          next: "s029"
-        },
-        {
-          id: "s027_c3",
-          label: "להתחייב לסכום קבוע מהעסק",
-          immediateEffects: { money: -1500, cashflow: -5, credibility: 5, stress: 5 },
-          delayed: [{ afterTurns: 2, effects: { cashflow: -4, money: -900 }, revealText: "התחייבות חודשית חזרה בדיוק בזמן הלא נכון." }],
-          flags: { set: ["promised_family_support", "family_emergency"] },
-          resultText: "קיבלת שקט משפחתי במחיר עסקי קבוע.",
-          next: "s030"
-        }
-      ]
-    },
-    {
-      id: "s028",
-      title: "טיוטה אחרונה לחתימה",
-      text: ["זה הלילה האחרון לפני סגירה.", "או לפני נסיגה."],
-      bullets: ["בדיקה כפולה", "פיתוי לסיים מהר"],
-      choices: [
-        {
-          id: "s028_c1",
-          label: "לחתום רק אחרי אימות כפול",
-          immediateEffects: { credibility: 7, stress: 2, money: -600 },
-          flags: { set: ["found_red_flags"] },
-          resultText: "בחרת דיוק במקום אדרנלין.",
-          next: { type: "conditional", rules: [{ if: { cluesAll: ["c05", "c10"] }, goto: "s030" }], default: "s029" }
-        },
-        {
-          id: "s028_c2",
-          label: "לחתום עכשיו ולנעול",
-          immediateEffects: { cashflow: 8, money: 3200, exposure: 5, credibility: -4 },
-          delayed: [{ afterTurns: 2, effects: { exposure: 6, stress: 4 }, revealText: "האותיות הקטנות התעוררו אחרי החתימה.", clues: ["c12"] }],
-          flags: { set: ["signed_term_sheet"] },
-          resultText: "העסקה נסגרה מהר. החדר לא נרגע.",
-          next: "s029"
-        },
-        {
-          id: "s028_c3",
-          label: "לסגת ברגע האחרון",
-          immediateEffects: { credibility: 5, cashflow: -4, stress: 3, exposure: -2 },
-          flags: { set: ["mentor_warning"] },
-          resultText: "ויתרת על כסף כדי להציל מרחב תמרון.",
-          next: "s030"
-        }
-      ]
-    },
-    {
-      id: "s029",
-      title: "סערת הדלפה ברשת",
-      text: ["השם שלך מתחיל להתרוצץ.", "יש עוד שעה לפני שכולם רואים."],
-      bullets: ["תגובה מהירה", "או מחיקה מסוכנת"],
-      choices: [
-        {
-          id: "s029_c1",
-          label: "הודעה מלאה עם ראיות",
-          immediateEffects: { exposure: -7, credibility: 5, stress: 5, money: -700 },
-          resultText: "היוזמה חזרה לידיים שלך, חלקית.",
-          next: { type: "conditional", rules: [{ if: { stats: { exposure: { lte: 40 }, credibility: { gte: 55 } } }, goto: "s030" }], default: "END:boxed_in" }
-        },
-        {
-          id: "s029_c2",
-          label: "למחוק עקבות בלילה",
-          immediateEffects: { money: -900, exposure: 6, stress: 6, credibility: -6 },
-          flags: { set: ["legal_risk", "leaked_screenshot"] },
-          clues: ["c03", "c11"],
-          resultText: "מחיקה חלקית השאירה סימנים חדים.",
-          next: "END:exposed"
-        },
-        {
-          id: "s029_c3",
-          label: "להקריב קשר כדי לעצור פרסום",
-          immediateEffects: { closeness: -10, exposure: -4, credibility: 2, stress: 7 },
-          flags: { unset: ["crossed_boundary"] },
-          resultText: "הלהבה ירדה. המחיר אישי.",
-          next: "s030"
-        }
-      ]
-    },
-    {
-      id: "s030",
-      title: "שחר. החלטה אחרונה",
-      text: ["הטלפון ביד אחת.", "טיוטת חתימה ביד השנייה."],
-      bullets: ["מסלול נקי", "מהלך מהיר", "לב מול לוח"],
-      choices: [
-        {
-          id: "s030_c1",
-          label: "לבחור מסלול נקי גם אם איטי",
-          immediateEffects: { money: 1200, cashflow: 3, credibility: 7, stress: 2, exposure: -3 },
-          flags: { set: ["family_emergency_resolved"] },
-          resultText: "בחרת יציבות. עכשיו הכול ייבחן במספרים.",
-          next: "END:last_minute_save"
-        },
-        {
-          id: "s030_c2",
-          label: "ללחוץ על עסקה מהירה",
-          immediateEffects: { money: 3800, cashflow: 6, portfolio: 5, stress: 6, exposure: 5 },
-          resultText: "הדלת נסגרה מאחוריך מהר.",
-          next: "END:quiet_deal"
-        },
-        {
-          id: "s030_c3",
-          label: "להתקשר הביתה לפני חתימה",
-          immediateEffects: { energy: 3, stress: -4, credibility: 4, money: -800, cashflow: -2 },
-          flags: { set: ["family_emergency_resolved"] },
-          resultText: "הקול בצד השני שינה את הכיוון.",
-          next: "END:family_first"
-        },
-        {
-          id: "s030_c4",
-          label: "לשלוח: \"נפגשים לבד\"",
-          immediateEffects: { closeness: 12, exposure: 9, stress: 5, credibility: -3 },
-          flags: { set: ["crossed_boundary"] },
-          resultText: "כתבת שורה קצרה עם השלכות ארוכות.",
-          next: "END:we_both_knew"
+          id: "c",
+          label: "לצאת כי זה מסוכן",
+          result: "יצאת. הלב נשאר בפנים.",
+          effects: { relationship: 2, stress: 3, trust: 1 }
         }
       ]
     }
   ];
 
-  const CLUE_BY_ID = new Map(CLUES.map((c) => [c.id, c]));
-  const ENDING_BY_ID = new Map(ENDINGS.map((e) => [e.id, e]));
-  const SCENARIO_BY_ID = new Map(SCENARIOS.map((s) => [s.id, s]));
-
-  const dom = {
-    body: document.body,
-    startBtn: document.getElementById("startBtn"),
-    continueBtn: document.getElementById("continueBtn"),
-    helpBtn: document.getElementById("helpBtn"),
-    themeBtn: document.getElementById("themeBtn"),
-    muteBtn: document.getElementById("muteBtn"),
-    turnIndicator: document.getElementById("turnIndicator"),
-    chapterIndicator: document.getElementById("chapterIndicator"),
-    homeScreen: document.getElementById("homeScreen"),
-    gameScreen: document.getElementById("gameScreen"),
-    startHomeBtn: document.getElementById("startHomeBtn"),
-    continueHomeBtn: document.getElementById("continueHomeBtn"),
-    scenarioCard: document.getElementById("scenarioCard"),
-    scenarioTitle: document.getElementById("scenarioTitle"),
-    scenarioText: document.getElementById("scenarioText"),
-    scenarioBullets: document.getElementById("scenarioBullets"),
-    choicesContainer: document.getElementById("choicesContainer"),
-    resultBox: document.getElementById("resultBox"),
-    resultText: document.getElementById("resultText"),
-    resultReveals: document.getElementById("resultReveals"),
-    resultClue: document.getElementById("resultClue"),
-    deltaChips: document.getElementById("deltaChips"),
-    nextTurnBtn: document.getElementById("nextTurnBtn"),
-    endingBox: document.getElementById("endingBox"),
-    endingTitle: document.getElementById("endingTitle"),
-    endingSummary: document.getElementById("endingSummary"),
-    restartFromEndBtn: document.getElementById("restartFromEndBtn"),
-    backHomeBtn: document.getElementById("backHomeBtn"),
-    moneyDisplay: document.getElementById("moneyDisplay"),
-    statsBars: document.getElementById("statsBars"),
-    historyList: document.getElementById("historyList"),
-    cluesList: document.getElementById("cluesList"),
-    endingsGrid: document.getElementById("endingsGrid"),
-    endingProgress: document.getElementById("endingProgress"),
-    toastContainer: document.getElementById("toastContainer"),
-    helpModal: document.getElementById("helpModal"),
-    closeHelpBtn: document.getElementById("closeHelpBtn")
-  };
-
-  let audioCtx = null;
-
-  const state = {
-    phase: PHASES.HOME,
-    turn: 1,
-    maxTurns: MAX_TURNS,
-    currentScenarioId: null,
-    stats: { ...INITIAL_STATS },
-    flags: createBaseFlags(),
-    cluesDiscovered: [],
-    history: [],
-    delayedQueue: [],
-    pendingNext: null,
-    pendingEnding: null,
-    resultPayload: null,
-    endingId: null,
-    warningState: {
-      money_minus: false,
-      cashflow_critical: false,
-      stress_extreme: false,
-      exposure_high: false,
-      credibility_low: false,
-      closeness_edge: false
+  const EXTRA_SCENARIOS = [
+    {
+      id: "romance_trip",
+      minTurn: 28,
+      maxTurn: 120,
+      tags: ["romance"],
+      title: "נסיעת עבודה מחוץ לעיר",
+      text: ["המלון הוזמן לשניכם.", "אף אחד מהבית לא יודע את כל הפרטים."],
+      bullets: ["סיכון גבוה"],
+      choices: [
+        {
+          id: "a",
+          label: "להישאר בחדר לבד",
+          result: "שמרת קו. היה קשה.",
+          effects: { stress: 2, trust: 2, relationship: -1 }
+        },
+        {
+          id: "b",
+          label: "לרדת לבר לשיחה ארוכה",
+          result: "הגבול זז עוד קצת.",
+          effects: { relationship: 10, exposure: 8, stress: 4 },
+          flags: { set: ["affairActive", "lateNightPattern"] },
+          clues: ["c025", "c033"],
+          suspicion: 14
+        },
+        {
+          id: "c",
+          label: "לבטל נסיעה ולחזור הביתה",
+          result: "איבדת עסקה, הרווחת אוויר בבית.",
+          effects: { money: -2500, family: 4, trust: 3, relationship: -2 }
+        }
+      ]
     },
-    prefs: {
-      theme: "dark",
-      mute: false,
-      unlockedEndings: []
+    {
+      id: "jealous_phone",
+      minTurn: 30,
+      maxTurn: 120,
+      tags: ["romance", "family"],
+      title: "הטלפון רטט בזמן ארוחת ערב",
+      text: ["המסך נדלק: \"מאיה\".", "כולם ראו."],
+      bullets: ["רגע אחד לא נכון"],
+      requiresAnyFlag: ["isDating", "isMarried"],
+      choices: [
+        {
+          id: "a",
+          label: "להפוך את המסך ולהמשיך",
+          result: "זה לא עבר חלק.",
+          effects: { trust: -5, family: -4, stress: 5 },
+          clues: ["c014", "c028"],
+          suspicion: 10
+        },
+        {
+          id: "b",
+          label: "לצאת ולענות בחוץ",
+          result: "השיחה הייתה חמה. הבית שם לב.",
+          effects: { relationship: 6, exposure: 6, trust: -4, stress: 4 },
+          flags: { set: ["affairActive"] },
+          clues: ["c022", "c042"],
+          suspicion: 12
+        },
+        {
+          id: "c",
+          label: "לא לענות",
+          result: "שמרת את הערב, אבל מאיה נפגעה.",
+          effects: { relationship: -4, trust: 2, family: 2 }
+        }
+      ]
+    },
+    {
+      id: "exposure_screenshot",
+      minTurn: 18,
+      maxTurn: 120,
+      tags: ["exposure"],
+      title: "צילום מסך רץ ברשת",
+      text: ["מישהו העלה שיחה שלך.", "השם שלך מתחיל לרוץ."],
+      bullets: ["זמן תגובה קצר"],
+      choices: [
+        {
+          id: "a",
+          label: "להגיב מהר עם הסבר",
+          result: "עצר חלק מהאש.",
+          effects: { exposure: -4, trust: 3, stress: 3, money: -1500 },
+          clues: ["c015"]
+        },
+        {
+          id: "b",
+          label: "למחוק ולשתוק",
+          result: "המחיקה יצרה עוד רעש.",
+          effects: { exposure: 7, trust: -4, stress: 5 },
+          clues: ["c029", "c035"]
+        },
+        {
+          id: "c",
+          label: "להפעיל עורך דין",
+          result: "מהלך קשוח, יקר, אבל מרגיע חלקית.",
+          effects: { money: -4200, exposure: -2, trust: 1, stress: 2 },
+          flags: { set: ["legalRisk"] },
+          clues: ["c011"]
+        }
+      ]
+    },
+    {
+      id: "exposure_law_letter",
+      minTurn: 35,
+      maxTurn: 120,
+      tags: ["exposure", "business"],
+      title: "מכתב לפני תביעה",
+      text: ["קיבלת מכתב אזהרה רשמי.", "יש 48 שעות להגיב."],
+      bullets: ["אי אפשר להתעלם"],
+      choices: [
+        {
+          id: "a",
+          label: "להגיע לפשרה",
+          result: "שילמת וסגרת זמנית.",
+          effects: { money: -11000, exposure: -2, stress: 3 },
+          clues: ["c043"]
+        },
+        {
+          id: "b",
+          label: "להילחם בבית משפט",
+          result: "בחרת מלחמה.",
+          effects: { money: -5000, stress: 8, trust: -2, reputation: -2 },
+          flags: { set: ["investigationOpen", "legalRisk"] },
+          clues: ["c031", "c040"]
+        },
+        {
+          id: "c",
+          label: "לנסות לעקוף בשקט",
+          result: "זה נראה כמו טלאי מסוכן.",
+          effects: { exposure: 6, trust: -5, stress: 6 },
+          flags: { set: ["blackmailRisk"] },
+          clues: ["c010"]
+        }
+      ]
+    },
+    {
+      id: "business_expand",
+      minTurn: 32,
+      maxTurn: 120,
+      tags: ["business"],
+      title: "פתיחת סניף קטן",
+      text: ["יש מקום פנוי במחיר טוב.", "זה יכול להקפיץ אותך או לשבור אותך."],
+      bullets: ["צמיחה מול סיכון"],
+      choices: [
+        {
+          id: "a",
+          label: "לפתוח עכשיו",
+          result: "פתחת מהר. כולם מסתכלים.",
+          effects: { money: -28000, assets: 35000, cashflow: 7, reputation: 5, stress: 5 },
+          flags: { set: ["businessOpened"] }
+        },
+        {
+          id: "b",
+          label: "לפתוח עם שותף",
+          result: "חסכת כסף. ויתרת על שליטה.",
+          effects: { money: -10000, cashflow: 5, trust: -2, reputation: 3 },
+          flags: { set: ["partnerPressure", "businessOpened"] }
+        },
+        {
+          id: "c",
+          label: "לחכות עוד חודש",
+          result: "נשארת זהיר.",
+          effects: { stress: -2, cashflow: 1 }
+        }
+      ]
+    },
+    {
+      id: "business_cash_crash",
+      minTurn: 38,
+      maxTurn: 120,
+      tags: ["business"],
+      title: "חור בתזרים",
+      text: ["שלושה לקוחות לא שילמו.", "החודש עומד להיסגר באדום."],
+      bullets: ["תשלום משכורות בסכנה"],
+      choices: [
+        {
+          id: "a",
+          label: "לקחת הלוואה קצרה",
+          result: "קנית זמן בכסף יקר.",
+          effects: { money: 14000, debts: 18000, stress: 5, cashflow: 4 },
+          flags: { set: ["legalRisk"] },
+          clues: ["c041"]
+        },
+        {
+          id: "b",
+          label: "לקצץ בשכר זמנית",
+          result: "העסק שרד. הצוות כועס.",
+          effects: { cashflow: 6, reputation: -3, trust: -3, stress: 3 }
+        },
+        {
+          id: "c",
+          label: "למכור ציוד",
+          result: "נכנס מזומן מיידי.",
+          effects: { money: 9000, assets: -7000, energy: -2, stress: 2 }
+        }
+      ]
+    },
+    {
+      id: "family_move_in",
+      minTurn: 26,
+      maxTurn: 120,
+      tags: ["family", "romance"],
+      title: "מעבר לגור יחד",
+      text: ["מאיה מציעה לגור יחד.", "זה רגע גדול וגם מפחיד."],
+      bullets: ["יותר קרבה", "יותר אחריות"],
+      requiresFlagsAll: ["isDating"],
+      excludesFlags: ["isMarried"],
+      choices: [
+        {
+          id: "a",
+          label: "כן, עוברים",
+          result: "הקשר עלה שלב.",
+          effects: { relationship: 8, family: 8, money: -12000, stress: 2 },
+          clues: ["c045"]
+        },
+        {
+          id: "b",
+          label: "עוד לא",
+          result: "היא נפגעה, אבל הבינה חלקית.",
+          effects: { relationship: -4, family: -2, stress: 2 }
+        },
+        {
+          id: "c",
+          label: "כן, אבל בסוד מהשותפים",
+          result: "עברתם, אבל פתחת עוד סוד.",
+          effects: { relationship: 6, family: 5, exposure: 5, stress: 4 },
+          flags: { set: ["blackmailRisk"] },
+          clues: ["c024"],
+          suspicion: 8
+        }
+      ]
+    },
+    {
+      id: "affair_blackmail",
+      minTurn: 44,
+      maxTurn: 120,
+      tags: ["romance", "exposure"],
+      title: "הודעה: יש לי הוכחה",
+      text: ["מישהו שלח: \"יש לי תמונה שלך ושל מאיה\".", "הוא רוצה כסף."],
+      bullets: ["סחיטה"],
+      requiresFlagsAll: ["affairActive"],
+      choices: [
+        {
+          id: "a",
+          label: "לשלם ולסגור",
+          result: "שילמת. אין הבטחה שזה נגמר.",
+          effects: { money: -15000, stress: 6, exposure: -1 },
+          flags: { set: ["blackmailRisk"] },
+          clues: ["c001", "c033"]
+        },
+        {
+          id: "b",
+          label: "לאיים עליו",
+          result: "הוא נבהל לרגע ואז דלף עוד חומר.",
+          effects: { exposure: 8, stress: 7, trust: -4 },
+          flags: { set: ["leakActive", "blackmailRisk"] },
+          clues: ["c029"]
+        },
+        {
+          id: "c",
+          label: "לספר בבית לפני שזה יוצא",
+          result: "זה כאב. אבל זה כבר לא סוד.",
+          effects: { trust: -6, family: -5, exposure: -3, stress: 4 },
+          flags: { set: ["affairSuspected", "breakupThreat"] },
+          suspicion: -10
+        }
+      ]
+    },
+    {
+      id: "rebuild_offer",
+      minTurn: 52,
+      maxTurn: 120,
+      tags: ["rebuild"],
+      title: "עבודה קטנה להצלה",
+      text: ["יש פרויקט קטן אבל בטוח.", "לא נוצץ, כן יציב."],
+      bullets: ["דרך חזרה איטית"],
+      requiresStat: { moneyMax: 15000 },
+      choices: [
+        {
+          id: "a",
+          label: "לקחת ולחרוש",
+          result: "הכניסה קטנה, אבל יציבה.",
+          effects: { money: 8000, cashflow: 5, reputation: 3, energy: -3, stress: -2 },
+          flags: { set: ["rebuiltAfterFall"] }
+        },
+        {
+          id: "b",
+          label: "לוותר ולחפש קפיצה",
+          result: "שמרת זמן. כסף לא נכנס.",
+          effects: { stress: 3, reputation: -1 }
+        },
+        {
+          id: "c",
+          label: "להביא את מאיה לפרויקט",
+          result: "עבדתם צמוד. הקשר התחזק והעיניים גם.",
+          effects: { money: 6500, relationship: 6, exposure: 4, trust: -2 },
+          flags: { set: ["affairActive"] },
+          suspicion: 8
+        }
+      ]
+    },
+    {
+      id: "reputation_media",
+      minTurn: 56,
+      maxTurn: 120,
+      tags: ["exposure", "business"],
+      title: "ראיון פומבי",
+      text: ["הציעו לך ראיון על הצלחה מהירה.", "גם שאלות קשות יבואו."],
+      bullets: ["מוניטין יכול לקפוץ או ליפול"],
+      choices: [
+        {
+          id: "a",
+          label: "לעלות לראיון",
+          result: "קיבלת חשיפה טובה, עם סיכון.",
+          effects: { reputation: 7, exposure: 5, trust: 2, stress: 3 }
+        },
+        {
+          id: "b",
+          label: "לסרב בנימוס",
+          result: "שמעת על עצמך פחות. נשארת בטוח יותר.",
+          effects: { exposure: -2, reputation: 1, stress: -1 }
+        },
+        {
+          id: "c",
+          label: "לתאם מסרים עם מאיה בלילה",
+          result: "הראיון עבר טוב מדי.",
+          effects: { reputation: 6, relationship: 5, exposure: 7, trust: -3 },
+          clues: ["c030", "c039"],
+          suspicion: 6
+        }
+      ]
+    },
+    {
+      id: "family_wedding",
+      minTurn: 34,
+      maxTurn: 120,
+      tags: ["family"],
+      title: "הצעה לחתונה",
+      text: ["מאיה רוצה תשובה ברורה.", "להמשיך חצי חצי כבר לא עובד."],
+      bullets: ["זה צעד גדול"],
+      requiresFlagsAll: ["isDating"],
+      excludesFlags: ["isMarried"],
+      choices: [
+        {
+          id: "a",
+          label: "כן, מתחתנים",
+          result: "סגרת את זה ברור.",
+          effects: { family: 10, trust: 6, money: -22000, stress: 2 },
+          flags: { set: ["isMarried"] }
+        },
+        {
+          id: "b",
+          label: "עוד זמן",
+          result: "נוצר סדק בקשר.",
+          effects: { relationship: -6, family: -4, stress: 4 },
+          flags: { set: ["breakupThreat"] }
+        },
+        {
+          id: "c",
+          label: "להתחמק עם הבטחות",
+          result: "הרווחת שבוע. לא יותר.",
+          effects: { trust: -5, relationship: -3, stress: 5 },
+          clues: ["c006"]
+        }
+      ]
+    },
+    {
+      id: "family_kids",
+      minTurn: 48,
+      maxTurn: 120,
+      tags: ["family"],
+      title: "שיחה על ילד",
+      text: ["הבית רוצה לגדול.", "אתה יודע שזה גם כסף וגם זמן."],
+      bullets: ["אחריות כבדה"],
+      requiresFlagsAll: ["isMarried"],
+      excludesFlags: ["hasKids"],
+      choices: [
+        {
+          id: "a",
+          label: "כן, הולכים על זה",
+          result: "החיים נהיו אמיתיים יותר.",
+          effects: { family: 12, stress: 4, money: -18000 },
+          flags: { set: ["hasKids"] }
+        },
+        {
+          id: "b",
+          label: "לחכות שנה",
+          result: "היא קיבלה. בקושי.",
+          effects: { family: -2, relationship: -3, stress: 2 }
+        },
+        {
+          id: "c",
+          label: "לשנות נושא ולעבור לעבודה",
+          result: "זה השאיר טעם רע בבית.",
+          effects: { family: -6, trust: -4, reputation: 2, stress: 4 }
+        }
+      ]
+    },
+    {
+      id: "invest_foreign",
+      minTurn: 40,
+      maxTurn: 120,
+      tags: ["invest"],
+      title: "חשבון השקעות זר",
+      text: ["הציעו לך מסלול זר עם רווח מהיר.", "הבדיקה לא לגמרי נקייה."],
+      bullets: ["כסף גדול", "גם סיכון משפטי"],
+      choices: [
+        {
+          id: "a",
+          label: "להיכנס",
+          result: "נכנסת למסלול מהיר מאוד.",
+          effects: { money: 18000, investments: 8, exposure: 7, stress: 5 },
+          flags: { set: ["legalRisk", "highRiskMode"] },
+          clues: ["c017", "c032"]
+        },
+        {
+          id: "b",
+          label: "לבדוק לעומק קודם",
+          result: "זה עלה לך זמן, חסך סיכון.",
+          effects: { energy: -4, stress: 2, trust: 2, exposure: -1 },
+          clues: ["c023"]
+        },
+        {
+          id: "c",
+          label: "לסגור את זה",
+          result: "ויתרת על רווח מהיר.",
+          effects: { stress: -2, trust: 1 }
+        }
+      ]
+    },
+    {
+      id: "business_investigation",
+      minTurn: 58,
+      maxTurn: 120,
+      tags: ["business", "exposure"],
+      title: "בדיקה רשמית",
+      text: ["קיבלת הודעה על בדיקה בעסק.", "מבקשים מסמכים מייד."],
+      bullets: ["אי אפשר לעכב"],
+      choices: [
+        {
+          id: "a",
+          label: "להגיש הכול",
+          result: "כואב, אבל נקי.",
+          effects: { trust: 5, stress: 4, money: -3500, exposure: -2 },
+          flags: { set: ["investigationOpen"] }
+        },
+        {
+          id: "b",
+          label: "לסדר מסמכים מחדש",
+          result: "נראה טוב מבחוץ. מסוכן מבפנים.",
+          effects: { stress: 6, trust: -5, exposure: 5 },
+          flags: { set: ["legalRisk", "investigationOpen"] },
+          clues: ["c005", "c026"]
+        },
+        {
+          id: "c",
+          label: "להעביר לעורך דין",
+          result: "העורך דין לקח שליטה.",
+          effects: { money: -7200, stress: 3, trust: 2, exposure: -1 },
+          clues: ["c040"]
+        }
+      ]
+    },
+    {
+      id: "rebuild_sell",
+      minTurn: 60,
+      maxTurn: 120,
+      tags: ["rebuild", "property"],
+      title: "למכור נכס כדי לנשום",
+      text: ["אין לך מרווח.", "מכירת נכס תחזיר אוויר."],
+      bullets: ["כאב עכשיו מול הישרדות"],
+      requiresStat: { debtsMin: 50000 },
+      choices: [
+        {
+          id: "a",
+          label: "למכור מהר",
+          result: "נשמת. ויתרת על עתיד.",
+          effects: { money: 42000, assets: -50000, debts: -22000, stress: -4 },
+          flags: { set: ["rebuiltAfterFall"] }
+        },
+        {
+          id: "b",
+          label: "להחזיק ולסבול",
+          result: "שמרת נכס, הלחץ קפץ.",
+          effects: { stress: 8, cashflow: -5, family: -3 }
+        },
+        {
+          id: "c",
+          label: "לבקש עזרה מהבית",
+          result: "קיבלת עזרה עם מחיר רגשי.",
+          effects: { debts: -9000, family: -4, trust: -3, stress: 3 }
+        }
+      ]
     }
-  };
-  function createBaseFlags() {
+  ];
+
+  const ALL_SCENARIOS = [...SCENARIOS, ...EXTRA_SCENARIOS];
+  const CLUE_MAP = new Map(CLUES.map((clue) => [clue.id, clue]));
+  const ENDING_MAP = new Map(ENDINGS.map((ending) => [ending.id, ending]));
+  const ITEM_MAP = new Map(ITEM_CATALOG.map((item) => [item.id, item]));
+
+  function createFlags() {
     return FLAG_KEYS.reduce((acc, key) => {
       acc[key] = false;
       return acc;
     }, {});
   }
 
-  function loadJson(key, fallback) {
+  function createInitialState() {
+    return {
+      phase: PHASES.HOME,
+      tab: "story",
+      turn: 1,
+      week: 1,
+      month: 1,
+      freeMode: false,
+      maxTurns: MAX_STANDARD_TURNS,
+      stats: { ...INITIAL_STATS },
+      flags: createFlags(),
+      hidden: {
+        suspicion: 0,
+        danger: 0,
+        dealContext: null,
+        dealStep: null,
+        pendingScenarioIds: []
+      },
+      currentScenario: null,
+      resultPayload: null,
+      history: [],
+      clues: [],
+      delayedQueue: [],
+      lastMonthSummary: null,
+      ownedItems: [],
+      unlockedEndings: [],
+      badges: [],
+      endingId: null,
+      theme: "dark"
+    };
+  }
+
+  const state = createInitialState();
+
+  const dom = {
+    body: document.body,
+    newGameBtn: document.getElementById("newGameBtn"),
+    continueBtn: document.getElementById("continueBtn"),
+    freeModeBtn: document.getElementById("freeModeBtn"),
+    homeNewBtn: document.getElementById("homeNewBtn"),
+    homeContinueBtn: document.getElementById("homeContinueBtn"),
+    homeFreeBtn: document.getElementById("homeFreeBtn"),
+    helpBtn: document.getElementById("helpBtn"),
+    closeHelpBtn: document.getElementById("closeHelpBtn"),
+    helpDialog: document.getElementById("helpDialog"),
+    themeBtn: document.getElementById("themeBtn"),
+    timeIndicator: document.getElementById("timeIndicator"),
+    turnIndicator: document.getElementById("turnIndicator"),
+    seasonIndicator: document.getElementById("seasonIndicator"),
+    homeCard: document.getElementById("homeCard"),
+    scenarioCard: document.getElementById("scenarioCard"),
+    scenarioTitle: document.getElementById("scenarioTitle"),
+    scenarioText: document.getElementById("scenarioText"),
+    scenarioBullets: document.getElementById("scenarioBullets"),
+    choicesBox: document.getElementById("choicesBox"),
+    resultCard: document.getElementById("resultCard"),
+    resultMain: document.getElementById("resultMain"),
+    resultExtra: document.getElementById("resultExtra"),
+    resultClue: document.getElementById("resultClue"),
+    deltaBox: document.getElementById("deltaBox"),
+    nextTurnBtn: document.getElementById("nextTurnBtn"),
+    endingCard: document.getElementById("endingCard"),
+    endingTitle: document.getElementById("endingTitle"),
+    endingText: document.getElementById("endingText"),
+    endingNewBtn: document.getElementById("endingNewBtn"),
+    endingFreeBtn: document.getElementById("endingFreeBtn"),
+    monthSummaryCard: document.getElementById("monthSummaryCard"),
+    monthSummaryText: document.getElementById("monthSummaryText"),
+    moneyLine: document.getElementById("moneyLine"),
+    assetsLine: document.getElementById("assetsLine"),
+    debtsLine: document.getElementById("debtsLine"),
+    statsBars: document.getElementById("statsBars"),
+    ownedList: document.getElementById("ownedList"),
+    storeList: document.getElementById("storeList"),
+    relationsList: document.getElementById("relationsList"),
+    cluesList: document.getElementById("cluesList"),
+    endingsGrid: document.getElementById("endingsGrid"),
+    badgesGrid: document.getElementById("badgesGrid"),
+    endingProgress: document.getElementById("endingProgress"),
+    toastBox: document.getElementById("toastBox"),
+    tabButtons: Array.from(document.querySelectorAll("[data-tab-btn]")),
+    tabPanels: Array.from(document.querySelectorAll("[data-tab]"))
+  };
+
+  const SCENARIO_BY_ID = new Map(ALL_SCENARIOS.map((scenario) => [scenario.id, scenario]));
+
+  function clone(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function randInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function pickRandom(arr) {
+    if (!arr.length) return null;
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+
+  function clampPercent(value) {
+    return Math.max(0, Math.min(100, Math.round(value)));
+  }
+
+  function formatMoney(value) {
+    return `₪${new Intl.NumberFormat("he-IL", { maximumFractionDigits: 0 }).format(Math.round(value))}`;
+  }
+
+  function seasonFromMonth(month) {
+    const season = Math.min(4, Math.max(1, Math.floor((month - 1) / 6) + 1));
+    return `עונה ${season}/4`;
+  }
+
+  function readJson(key, fallback) {
     try {
       const raw = localStorage.getItem(key);
       if (!raw) return fallback;
@@ -1220,49 +1265,46 @@
     }
   }
 
-  function saveJson(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
+  function writeJson(key, data) {
+    localStorage.setItem(key, JSON.stringify(data));
   }
 
-  function loadPrefs() {
-    const meta = loadJson(STORAGE_KEYS.meta, null);
-    if (!meta) return;
-    state.prefs.theme = meta.theme === "light" ? "light" : "dark";
-    state.prefs.mute = Boolean(meta.mute);
-    state.prefs.unlockedEndings = Array.isArray(meta.unlockedEndings)
-      ? meta.unlockedEndings.filter((id) => ENDING_BY_ID.has(id))
-      : [];
+  function applyTheme() {
+    dom.body.setAttribute("data-theme", state.theme);
+    dom.themeBtn.textContent = state.theme === "dark" ? "מצב: כהה" : "מצב: בהיר";
   }
 
-  function savePrefs() {
-    saveJson(STORAGE_KEYS.meta, {
-      theme: state.prefs.theme,
-      mute: state.prefs.mute,
-      unlockedEndings: state.prefs.unlockedEndings
+  function saveMeta() {
+    writeJson(STORAGE_KEYS.meta, {
+      theme: state.theme,
+      unlockedEndings: state.unlockedEndings,
+      badges: state.badges
     });
-  }
-
-  function loadRun() {
-    return loadJson(STORAGE_KEYS.run, null);
   }
 
   function saveRun() {
     if (state.phase === PHASES.HOME || state.phase === PHASES.ENDED) return;
-    saveJson(STORAGE_KEYS.run, {
+    writeJson(STORAGE_KEYS.run, {
       phase: state.phase,
-      currentScenarioId: state.currentScenarioId,
+      tab: state.tab,
       turn: state.turn,
+      week: state.week,
+      month: state.month,
+      freeMode: state.freeMode,
+      maxTurns: state.maxTurns,
       stats: state.stats,
       flags: state.flags,
-      cluesDiscovered: state.cluesDiscovered,
-      history: state.history,
-      delayedQueue: state.delayedQueue,
-      pendingNext: state.pendingNext,
-      pendingEnding: state.pendingEnding,
+      hidden: state.hidden,
+      currentScenario: state.currentScenario,
       resultPayload: state.resultPayload,
-      unlockedEndings: state.prefs.unlockedEndings,
-      theme: state.prefs.theme,
-      mute: state.prefs.mute
+      history: state.history,
+      clues: state.clues,
+      delayedQueue: state.delayedQueue,
+      lastMonthSummary: state.lastMonthSummary,
+      ownedItems: state.ownedItems,
+      unlockedEndings: state.unlockedEndings,
+      badges: state.badges,
+      theme: state.theme
     });
   }
 
@@ -1270,364 +1312,201 @@
     localStorage.removeItem(STORAGE_KEYS.run);
   }
 
-  function hydrateRun(saved) {
-    state.phase = saved.phase === PHASES.RESULT ? PHASES.RESULT : PHASES.RUNNING;
-    state.currentScenarioId = SCENARIO_BY_ID.has(saved.currentScenarioId) ? saved.currentScenarioId : "s001";
-    state.turn = Number.isFinite(saved.turn) ? saved.turn : 1;
-    state.stats = { ...INITIAL_STATS, ...(saved.stats || {}) };
-    state.flags = { ...createBaseFlags(), ...(saved.flags || {}) };
-    state.cluesDiscovered = Array.isArray(saved.cluesDiscovered) ? saved.cluesDiscovered : [];
-    state.history = Array.isArray(saved.history) ? saved.history : [];
-    state.delayedQueue = Array.isArray(saved.delayedQueue) ? saved.delayedQueue : [];
-    state.pendingNext = saved.pendingNext || null;
-    state.pendingEnding = saved.pendingEnding || null;
-    state.resultPayload = saved.resultPayload || null;
-    state.endingId = null;
-  }
-
-  function resetRun() {
-    state.phase = PHASES.RUNNING;
-    state.turn = 1;
-    state.currentScenarioId = "s001";
-    state.stats = { ...INITIAL_STATS };
-    state.flags = createBaseFlags();
-    state.cluesDiscovered = [];
-    state.history = [];
-    state.delayedQueue = [];
-    state.pendingNext = null;
-    state.pendingEnding = null;
-    state.resultPayload = null;
-    state.endingId = null;
-    Object.keys(state.warningState).forEach((key) => {
-      state.warningState[key] = false;
-    });
-  }
-
-  function applyTheme() {
-    dom.body.setAttribute("data-theme", state.prefs.theme);
-    dom.themeBtn.textContent = state.prefs.theme === "dark" ? "מצב: כהה" : "מצב: בהיר";
-  }
-
-  function formatMoney(value) {
-    const formatted = new Intl.NumberFormat("he-IL", { maximumFractionDigits: 0 }).format(value);
-    return `₪${formatted}`;
-  }
-
-  function chapterLabel(turn) {
-    if (turn <= 5) return "מערכה 1/3";
-    if (turn <= 10) return "מערכה 2/3";
-    return "מערכה 3/3";
-  }
-
-  function clampStat(key, value) {
-    if (key === "money") return Math.round(value);
-    return Math.max(0, Math.min(100, Math.round(value)));
-  }
-
-  function hasClue(id) {
-    return state.cluesDiscovered.some((clue) => clue.id === id);
-  }
-
-  function hasClues(ids) {
-    return ids.every((id) => hasClue(id));
-  }
-
-  function applyEffects(effects, deltaBag) {
-    if (!effects) return;
-    Object.entries(effects).forEach(([key, amount]) => {
-      if (!Number.isFinite(amount) || !Object.prototype.hasOwnProperty.call(state.stats, key)) return;
-      const oldValue = state.stats[key];
-      const newValue = clampStat(key, oldValue + amount);
-      const delta = newValue - oldValue;
-      state.stats[key] = newValue;
-      deltaBag[key] = (deltaBag[key] || 0) + delta;
-    });
-  }
-
-  function applyFlagChanges(flagBlock) {
-    if (!flagBlock) return;
-    if (Array.isArray(flagBlock.set)) {
-      flagBlock.set.forEach((flag) => {
-        if (FLAG_KEYS.includes(flag)) state.flags[flag] = true;
-      });
+  function loadAllStorage() {
+    const meta = readJson(STORAGE_KEYS.meta, null);
+    if (meta) {
+      state.theme = meta.theme === "light" ? "light" : "dark";
+      state.unlockedEndings = Array.isArray(meta.unlockedEndings) ? meta.unlockedEndings.filter((id) => ENDING_MAP.has(id)) : [];
+      state.badges = Array.isArray(meta.badges) ? meta.badges.filter((id) => BADGES.some((badge) => badge.id === id)) : [];
     }
-    if (Array.isArray(flagBlock.unset)) {
-      flagBlock.unset.forEach((flag) => {
-        if (FLAG_KEYS.includes(flag)) state.flags[flag] = false;
-      });
-    }
-  }
 
-  function addClue(clueId, targetTurn, resultPack) {
-    if (!CLUE_BY_ID.has(clueId) || hasClue(clueId)) return false;
-    const source = CLUE_BY_ID.get(clueId);
-    const discovered = {
-      id: source.id,
-      text: source.text,
-      severity: source.severity,
-      category: source.category,
-      discoveredAtTurn: targetTurn
+    const run = readJson(STORAGE_KEYS.run, null);
+    if (!run) return;
+
+    state.phase = run.phase === PHASES.RESULT ? PHASES.RESULT : PHASES.RUNNING;
+    state.tab = TAB_IDS.includes(run.tab) ? run.tab : "story";
+    state.turn = Number.isFinite(run.turn) ? run.turn : 1;
+    state.week = Number.isFinite(run.week) ? run.week : 1;
+    state.month = Number.isFinite(run.month) ? run.month : 1;
+    state.freeMode = Boolean(run.freeMode);
+    state.maxTurns = Number.isFinite(run.maxTurns) ? run.maxTurns : MAX_STANDARD_TURNS;
+    state.stats = { ...INITIAL_STATS, ...(run.stats || {}) };
+    state.flags = { ...createFlags(), ...(run.flags || {}) };
+    state.hidden = {
+      suspicion: 0,
+      danger: 0,
+      dealContext: null,
+      dealStep: null,
+      pendingScenarioIds: [],
+      ...(run.hidden || {})
     };
-    state.cluesDiscovered.push(discovered);
-    if (resultPack) resultPack.newClues.push(discovered);
-    return true;
-  }
-
-  function scheduleDelayed(delayedList) {
-    if (!Array.isArray(delayedList)) return;
-    delayedList.forEach((entry) => {
-      if (!entry || !Number.isFinite(entry.afterTurns) || entry.afterTurns < 1) return;
-      if (Number.isFinite(entry.chance) && Math.random() > entry.chance) return;
-      state.delayedQueue.push({
-        remainingTurns: entry.afterTurns,
-        effects: entry.effects || {},
-        revealText: entry.revealText || "",
-        clues: Array.isArray(entry.clues) ? entry.clues : [],
-        flags: entry.flags || null
-      });
-    });
-  }
-
-  function processDelayed(resultPack) {
-    if (!state.delayedQueue.length) return;
-    const pending = [];
-    state.delayedQueue.forEach((item) => {
-      item.remainingTurns -= 1;
-      if (item.remainingTurns <= 0) {
-        applyEffects(item.effects, resultPack.delta);
-        applyFlagChanges(item.flags);
-        item.clues.forEach((clueId) => addClue(clueId, state.turn, resultPack));
-        if (item.revealText) {
-          resultPack.reveals.push(item.revealText);
-          showToast(`התפתחות מושהית: ${item.revealText}`);
-        }
-      } else {
-        pending.push(item);
-      }
-    });
-    state.delayedQueue = pending;
-  }
-
-  function triggerRandomEvent(resultPack) {
-    if (state.turn % 3 !== 0) return;
-    const randomEvent = RANDOM_EVENTS[Math.floor(Math.random() * RANDOM_EVENTS.length)];
-    applyEffects(randomEvent.effects, resultPack.delta);
-    applyFlagChanges(randomEvent.flags);
-    if (randomEvent.clueId && Math.random() <= (randomEvent.clueChance || 1)) addClue(randomEvent.clueId, state.turn, resultPack);
-    resultPack.reveals.push(`אירוע צד: ${randomEvent.text}`);
-    showToast(`אירוע צד: ${randomEvent.text}`);
-  }
-
-  function evaluateStatRule(value, rule) {
-    if (!rule || typeof rule !== "object") return true;
-    if (Number.isFinite(rule.lt) && !(value < rule.lt)) return false;
-    if (Number.isFinite(rule.lte) && !(value <= rule.lte)) return false;
-    if (Number.isFinite(rule.gt) && !(value > rule.gt)) return false;
-    if (Number.isFinite(rule.gte) && !(value >= rule.gte)) return false;
-    if (Number.isFinite(rule.eq) && !(value === rule.eq)) return false;
-    if (Array.isArray(rule.between) && rule.between.length === 2) {
-      const [min, max] = rule.between;
-      if (!(value >= min && value <= max)) return false;
+    state.currentScenario = run.currentScenario || null;
+    state.resultPayload = run.resultPayload || null;
+    state.history = Array.isArray(run.history) ? run.history : [];
+    state.clues = Array.isArray(run.clues) ? run.clues : [];
+    state.delayedQueue = Array.isArray(run.delayedQueue) ? run.delayedQueue : [];
+    state.lastMonthSummary = run.lastMonthSummary || null;
+    state.ownedItems = Array.isArray(run.ownedItems) ? run.ownedItems.filter((itemId) => ITEM_MAP.has(itemId)) : [];
+    if (Array.isArray(run.unlockedEndings)) {
+      state.unlockedEndings = run.unlockedEndings.filter((id) => ENDING_MAP.has(id));
     }
-    return true;
-  }
-
-  function matchCondition(condition) {
-    if (!condition) return true;
-    if (condition.stats && typeof condition.stats === "object") {
-      for (const [statKey, rule] of Object.entries(condition.stats)) {
-        if (!Object.prototype.hasOwnProperty.call(state.stats, statKey)) return false;
-        if (!evaluateStatRule(state.stats[statKey], rule)) return false;
-      }
+    if (Array.isArray(run.badges)) {
+      state.badges = run.badges.filter((id) => BADGES.some((badge) => badge.id === id));
     }
-    if (Array.isArray(condition.flagsAll) && !condition.flagsAll.every((flag) => state.flags[flag])) return false;
-    if (Array.isArray(condition.flagsAny) && !condition.flagsAny.some((flag) => state.flags[flag])) return false;
-    if (Array.isArray(condition.flagsNot) && !condition.flagsNot.every((flag) => !state.flags[flag])) return false;
-    if (Array.isArray(condition.cluesAll) && !condition.cluesAll.every((clueId) => hasClue(clueId))) return false;
-    if (Array.isArray(condition.cluesAny) && !condition.cluesAny.some((clueId) => hasClue(clueId))) return false;
-    if (Array.isArray(condition.cluesNot) && !condition.cluesNot.every((clueId) => !hasClue(clueId))) return false;
-    if (Number.isFinite(condition.turnGte) && !(state.turn >= condition.turnGte)) return false;
-    if (Number.isFinite(condition.turnLte) && !(state.turn <= condition.turnLte)) return false;
-    return true;
-  }
-
-  function resolveNext(nextConfig) {
-    if (typeof nextConfig === "string") return nextConfig;
-    if (nextConfig && nextConfig.type === "conditional") {
-      const rules = Array.isArray(nextConfig.rules) ? nextConfig.rules : [];
-      for (const rule of rules) {
-        if (matchCondition(rule.if)) return rule.goto;
-      }
-      return nextConfig.default || "s030";
+    if (run.theme === "light" || run.theme === "dark") {
+      state.theme = run.theme;
     }
-    return "s030";
   }
 
-  function checkEnding(forced = false) {
-    const s = state.stats;
-    if (s.exposure >= 85 && hasClues(["c03", "c08"])) return "exposed";
-    if (s.stress >= 95 || s.energy <= 0) return "burnout";
-    if (s.money <= -1500 && s.cashflow <= 20) return "collapse";
-    if (s.credibility <= 15 && state.flags.crossed_boundary && hasClues(["c01", "c04"])) return "silent_betrayal";
-    if (s.closeness >= 80 && s.exposure >= 70 && state.flags.crossed_boundary) return "dangerous_closeness";
-    if (state.flags.legal_risk && s.exposure >= 75 && hasClues(["c20"])) return "boxed_in";
-    if (state.flags.signed_term_sheet && state.flags.crossed_boundary && hasClues(["c05", "c06"])) return "dirty_deal";
-    if (hasClues(["c02", "c07"]) && s.closeness >= 68 && state.flags.crossed_boundary) return "we_both_knew";
-    if (s.stress >= 85 && s.closeness >= 80 && s.credibility < 35) return "red_line";
-    if (state.flags.family_emergency && !state.flags.family_emergency_resolved && s.money >= 11000) return "family_first";
-    if (s.money >= 14000 && s.portfolio >= 70 && s.exposure <= 55 && s.credibility >= 60) return "cold_win";
-    if (s.credibility >= 70 && s.exposure <= 45 && state.flags.mentor_warning) return "credibility_hold";
-    if (s.money >= 7500 && s.cashflow >= 55 && s.exposure < 65 && !state.flags.legal_risk) return "quiet_deal";
-    if (!forced) return null;
-    if (state.flags.family_emergency && !state.flags.family_emergency_resolved) return "family_first";
-    if (s.money < 0 || s.cashflow < 30) return "red_line";
-    if (s.credibility >= 60 && s.exposure <= 50) return "credibility_hold";
-    return "last_minute_save";
-  }
+  function resetRun(freeMode = false) {
+    const savedEndings = [...state.unlockedEndings];
+    const savedBadges = [...state.badges];
+    const savedTheme = state.theme;
+    Object.assign(state, createInitialState());
+    state.unlockedEndings = savedEndings;
+    state.badges = savedBadges;
+    state.theme = savedTheme;
+    state.phase = PHASES.RUNNING;
+    state.freeMode = freeMode;
+    state.maxTurns = freeMode ? 9999 : MAX_STANDARD_TURNS;
 
-  function checkWarnings() {
-    WARNING_RULES.forEach((rule) => {
-      const triggered = rule.check(state.stats);
-      if (triggered && !state.warningState[rule.key]) showToast(rule.text, rule.level);
-      state.warningState[rule.key] = triggered;
-    });
+    if (freeMode) {
+      state.stats.money += 8000;
+      state.stats.reputation = clampPercent(state.stats.reputation + 10);
+      state.stats.investments = clampPercent(state.stats.investments + 10);
+    }
+
+    state.currentScenario = buildNextScenario();
   }
 
   function unlockEnding(endingId) {
-    if (!state.prefs.unlockedEndings.includes(endingId)) {
-      state.prefs.unlockedEndings.push(endingId);
-      savePrefs();
+    if (!state.unlockedEndings.includes(endingId)) {
+      state.unlockedEndings.push(endingId);
+      saveMeta();
     }
   }
 
-  function renderStats() {
-    dom.moneyDisplay.textContent = `כסף: ${formatMoney(state.stats.money)}`;
-    dom.statsBars.innerHTML = "";
-    STAT_ORDER.forEach((key) => {
-      const row = document.createElement("div");
-      row.className = "stat-row";
-      const label = document.createElement("label");
-      label.textContent = STAT_LABELS[key];
-      const valueText = document.createElement("span");
-      valueText.textContent = String(state.stats[key]);
-      label.appendChild(valueText);
-      const bar = document.createElement("div");
-      bar.className = "bar";
-      const fill = document.createElement("span");
-      fill.style.width = `${state.stats[key]}%`;
-      fill.setAttribute("aria-hidden", "true");
-      bar.appendChild(fill);
-      row.appendChild(label);
-      row.appendChild(bar);
-      dom.statsBars.appendChild(row);
-    });
-  }
-
-  function renderHistory() {
-    dom.historyList.innerHTML = "";
-    if (!state.history.length) {
-      const li = document.createElement("li");
-      li.textContent = "עדיין אין החלטות.";
-      dom.historyList.appendChild(li);
-      return;
+  function unlockBadge(badgeId) {
+    if (!state.badges.includes(badgeId)) {
+      state.badges.push(badgeId);
+      showToast(`באג' חדש: ${BADGES.find((badge) => badge.id === badgeId)?.title || "חדש"}`);
+      saveMeta();
     }
-    state.history.slice(0, 7).forEach((entry) => {
-      const li = document.createElement("li");
-      li.innerHTML = `<strong>תור ${entry.turn}: ${entry.title}</strong><span class="history-line">נבחר: ${entry.choiceLabel}</span>`;
-      dom.historyList.appendChild(li);
+  }
+
+  function getStatLabel(key) {
+    const found = STAT_META.find((item) => item.key === key);
+    return found ? found.label : key;
+  }
+
+  function showToast(text, type = "info") {
+    const toast = document.createElement("div");
+    toast.className = `toast ${type === "alert" ? "alert" : ""}`;
+    toast.textContent = text;
+    dom.toastBox.appendChild(toast);
+    setTimeout(() => toast.remove(), 3200);
+  }
+
+  function setTab(tabId) {
+    state.tab = TAB_IDS.includes(tabId) ? tabId : "story";
+    renderTabs();
+    saveRun();
+  }
+
+  function renderTabs() {
+    dom.tabButtons.forEach((button) => {
+      button.classList.toggle("active", button.dataset.tabBtn === state.tab);
+    });
+    dom.tabPanels.forEach((panel) => {
+      panel.hidden = panel.dataset.tab !== state.tab;
     });
   }
 
-  function renderClues() {
-    dom.cluesList.innerHTML = "";
-    if (!state.cluesDiscovered.length) {
-      const li = document.createElement("li");
-      li.textContent = "עדיין אין רמזים.";
-      dom.cluesList.appendChild(li);
-      return;
+  function renderTopLine() {
+    dom.timeIndicator.textContent = `שבוע ${state.week}, חודש ${state.month}`;
+    dom.turnIndicator.textContent = state.freeMode ? `תור ${state.turn}/חופשי` : `תור ${state.turn}/${state.maxTurns}`;
+    dom.seasonIndicator.textContent = seasonFromMonth(state.month);
+  }
+
+  function renderStory() {
+    const hasSave = Boolean(readJson(STORAGE_KEYS.run, null));
+    const canFree = state.unlockedEndings.length > 0;
+
+    dom.continueBtn.disabled = !hasSave || state.phase !== PHASES.HOME;
+    dom.homeContinueBtn.disabled = !hasSave || state.phase !== PHASES.HOME;
+    dom.freeModeBtn.hidden = !canFree || state.phase !== PHASES.HOME;
+    dom.homeFreeBtn.hidden = !canFree || state.phase !== PHASES.HOME;
+    dom.endingFreeBtn.hidden = !canFree;
+
+    dom.homeCard.hidden = state.phase !== PHASES.HOME;
+    dom.scenarioCard.hidden = state.phase !== PHASES.RUNNING && state.phase !== PHASES.RESULT;
+    dom.resultCard.hidden = state.phase !== PHASES.RESULT;
+    dom.endingCard.hidden = state.phase !== PHASES.ENDED;
+
+    if (state.lastMonthSummary && (state.phase === PHASES.RESULT || state.phase === PHASES.RUNNING)) {
+      dom.monthSummaryCard.hidden = false;
+      dom.monthSummaryText.textContent = state.lastMonthSummary;
+    } else {
+      dom.monthSummaryCard.hidden = true;
+      dom.monthSummaryText.textContent = "";
     }
-    const sorted = [...state.cluesDiscovered].sort((a, b) => b.discoveredAtTurn - a.discoveredAtTurn);
-    sorted.forEach((clue) => {
-      const li = document.createElement("li");
-      const top = document.createElement("div");
-      top.className = "clue-top";
-      const text = document.createElement("strong");
-      text.textContent = clue.text;
-      const dot = document.createElement("span");
-      dot.className = `clue-sev s${clue.severity}`;
-      dot.setAttribute("title", `חומרה ${clue.severity}`);
-      top.appendChild(text);
-      top.appendChild(dot);
-      const meta = document.createElement("div");
-      meta.className = "clue-meta";
-      meta.textContent = `${clue.category} | תור ${clue.discoveredAtTurn}`;
-      li.appendChild(top);
-      li.appendChild(meta);
-      dom.cluesList.appendChild(li);
-    });
+
+    if (state.phase === PHASES.RUNNING || state.phase === PHASES.RESULT) {
+      renderScenarioCard();
+    }
+
+    if (state.phase === PHASES.RESULT && state.resultPayload) {
+      renderResultCard();
+    }
+
+    if (state.phase === PHASES.ENDED) {
+      const ending = ENDING_MAP.get(state.endingId);
+      dom.endingTitle.textContent = ending ? ending.title : "סיום";
+      dom.endingText.textContent = ending ? ending.summary : "נגמר.";
+    }
   }
 
-  function renderCollection() {
-    dom.endingsGrid.innerHTML = "";
-    ENDINGS.forEach((ending) => {
-      const card = document.createElement("article");
-      const unlocked = state.prefs.unlockedEndings.includes(ending.id);
-      card.className = `ending-card ${unlocked ? "" : "locked"}`;
-      const title = document.createElement("h4");
-      title.textContent = unlocked ? ending.title : "נעול";
-      const summary = document.createElement("p");
-      summary.textContent = unlocked ? ending.summary : "צריך לחשוף מסלול נוסף.";
-      card.appendChild(title);
-      card.appendChild(summary);
-      dom.endingsGrid.appendChild(card);
-    });
-    dom.endingProgress.textContent = `${state.prefs.unlockedEndings.length}/${ENDINGS.length}`;
-  }
-
-  function renderScenario() {
-    const scenario = SCENARIO_BY_ID.get(state.currentScenarioId);
-    if (!scenario) return;
-    dom.scenarioTitle.textContent = scenario.title;
+  function renderScenarioCard() {
+    if (!state.currentScenario) return;
+    dom.scenarioTitle.textContent = state.currentScenario.title;
     dom.scenarioText.innerHTML = "";
-    scenario.text.forEach((line) => {
+    state.currentScenario.text.forEach((line) => {
       const p = document.createElement("p");
       p.textContent = line;
       dom.scenarioText.appendChild(p);
     });
+
     dom.scenarioBullets.innerHTML = "";
-    if (Array.isArray(scenario.bullets) && scenario.bullets.length) {
-      scenario.bullets.forEach((bullet) => {
-        const li = document.createElement("li");
-        li.textContent = bullet;
-        dom.scenarioBullets.appendChild(li);
-      });
-      dom.scenarioBullets.classList.remove("hidden");
-    } else {
-      dom.scenarioBullets.classList.add("hidden");
-    }
-    dom.choicesContainer.innerHTML = "";
-    scenario.choices.forEach((choice) => {
-      const button = document.createElement("button");
-      button.className = "choice-btn";
-      button.textContent = choice.label;
-      button.type = "button";
-      button.disabled = state.phase !== PHASES.RUNNING;
-      button.setAttribute("aria-label", `בחירה: ${choice.label}`);
-      button.addEventListener("click", () => handleChoice(scenario.id, choice.id));
-      dom.choicesContainer.appendChild(button);
+    (state.currentScenario.bullets || []).forEach((bullet) => {
+      const li = document.createElement("li");
+      li.textContent = bullet;
+      dom.scenarioBullets.appendChild(li);
+    });
+
+    dom.choicesBox.innerHTML = "";
+    state.currentScenario.choices.forEach((choice) => {
+      const btn = document.createElement("button");
+      btn.className = "choice-btn";
+      btn.textContent = choice.label;
+      btn.type = "button";
+      btn.disabled = state.phase !== PHASES.RUNNING;
+      btn.setAttribute("aria-label", `בחירה: ${choice.label}`);
+      btn.addEventListener("click", () => handleChoice(choice.id));
+      dom.choicesBox.appendChild(btn);
     });
   }
 
-  function renderResult() {
+  function renderResultCard() {
     const payload = state.resultPayload;
-    if (!payload) return;
-    dom.resultText.textContent = payload.mainText;
-    dom.resultReveals.innerHTML = "";
-    payload.reveals.forEach((line) => {
+    dom.resultMain.textContent = payload.main;
+
+    dom.resultExtra.innerHTML = "";
+    payload.lines.forEach((line) => {
       const li = document.createElement("li");
       li.textContent = line;
-      dom.resultReveals.appendChild(li);
+      dom.resultExtra.appendChild(li);
     });
+
     if (payload.newClues.length) {
       dom.resultClue.hidden = false;
       dom.resultClue.textContent = `רמז חדש: ${payload.newClues.map((clue) => clue.text).join(" | ")}`;
@@ -1635,242 +1514,977 @@
       dom.resultClue.hidden = true;
       dom.resultClue.textContent = "";
     }
-    dom.deltaChips.innerHTML = "";
-    const affected = Object.entries(payload.delta).filter(([, value]) => value !== 0);
-    if (!affected.length) {
+
+    dom.deltaBox.innerHTML = "";
+    const changed = Object.entries(payload.delta).filter(([, value]) => value !== 0);
+    if (!changed.length) {
       const chip = document.createElement("span");
-      chip.className = "chip neu";
-      chip.textContent = "ללא שינוי מיידי";
-      dom.deltaChips.appendChild(chip);
-    } else {
-      affected.forEach(([key, value]) => {
-        const chip = document.createElement("span");
-        chip.className = `chip ${value > 0 ? "pos" : "neg"}`;
-        const sign = value > 0 ? "+" : "";
-        chip.textContent = `${STAT_LABELS[key]} ${sign}${value}`;
-        dom.deltaChips.appendChild(chip);
+      chip.className = "chip";
+      chip.textContent = "לא היה שינוי גדול השבוע";
+      dom.deltaBox.appendChild(chip);
+      return;
+    }
+
+    changed.forEach(([key, value]) => {
+      const chip = document.createElement("span");
+      chip.className = `chip ${value > 0 ? "pos" : "neg"}`;
+      const mark = value > 0 ? "+" : "";
+      chip.textContent = `${getStatLabel(key)} ${mark}${value}`;
+      dom.deltaBox.appendChild(chip);
+    });
+  }
+
+  function renderStats() {
+    dom.moneyLine.textContent = `כסף: ${formatMoney(state.stats.money)}`;
+    dom.assetsLine.textContent = `נכסים: ${formatMoney(state.stats.assets)}`;
+    dom.debtsLine.textContent = `חובות: ${formatMoney(state.stats.debts)}`;
+
+    dom.statsBars.innerHTML = "";
+    PERCENT_KEYS.forEach((key) => {
+      const row = document.createElement("div");
+      row.className = "bar-row";
+      const label = document.createElement("label");
+      label.textContent = getStatLabel(key);
+      const val = document.createElement("span");
+      val.textContent = `${state.stats[key]}`;
+      label.appendChild(val);
+      const bar = document.createElement("div");
+      bar.className = "bar";
+      const fill = document.createElement("span");
+      fill.style.width = `${state.stats[key]}%`;
+      bar.appendChild(fill);
+      row.appendChild(label);
+      row.appendChild(bar);
+      dom.statsBars.appendChild(row);
+    });
+  }
+
+  function renderAssets() {
+    dom.ownedList.innerHTML = "";
+    const owned = state.ownedItems.map((id) => ITEM_MAP.get(id)).filter(Boolean);
+
+    if (!owned.length) {
+      const empty = document.createElement("div");
+      empty.className = "list-item";
+      empty.textContent = "עוד לא קנית רכוש.";
+      dom.ownedList.appendChild(empty);
+    }
+
+    owned.forEach((item) => {
+      const card = document.createElement("div");
+      card.className = "list-item";
+      card.innerHTML = `<h4>${item.name}</h4><p>${item.note}</p><p>סיכון: ${item.risk}</p>`;
+
+      const actions = document.createElement("div");
+      actions.className = "inline-actions";
+      const sellBtn = document.createElement("button");
+      sellBtn.className = "btn";
+      sellBtn.textContent = `למכור (${formatMoney(item.price * 0.75)})`;
+      sellBtn.disabled = state.phase !== PHASES.RUNNING;
+      sellBtn.addEventListener("click", () => sellItem(item.id));
+      actions.appendChild(sellBtn);
+
+      card.appendChild(actions);
+      dom.ownedList.appendChild(card);
+    });
+
+    dom.storeList.innerHTML = "";
+    ITEM_CATALOG.filter((item) => !state.ownedItems.includes(item.id)).forEach((item) => {
+      const card = document.createElement("div");
+      card.className = "list-item";
+      card.innerHTML = `<h4>${item.name}</h4><p>${item.note}</p><p>מחיר: ${formatMoney(item.price)}</p><p>סיכון: ${item.risk}</p>`;
+
+      const actions = document.createElement("div");
+      actions.className = "inline-actions";
+      const buyBtn = document.createElement("button");
+      buyBtn.className = "btn btn-main";
+      buyBtn.textContent = "לקנות";
+      buyBtn.disabled = state.phase !== PHASES.RUNNING || state.stats.money < item.price;
+      buyBtn.addEventListener("click", () => buyItem(item.id));
+      actions.appendChild(buyBtn);
+
+      card.appendChild(actions);
+      dom.storeList.appendChild(card);
+    });
+  }
+
+  function renderRelations() {
+    dom.relationsList.innerHTML = "";
+
+    const relationLevel = state.stats.relationship;
+    let relationMood = "רחוק";
+    if (relationLevel >= 70) relationMood = "קרוב מאוד";
+    else if (relationLevel >= 45) relationMood = "קרוב";
+    else if (relationLevel >= 25) relationMood = "פתוח";
+
+    const houseMood =
+      state.hidden.suspicion >= 75
+        ? "הבית ממש חושד"
+        : state.hidden.suspicion >= 45
+          ? "הבית מרגיש שמשהו לא יושב"
+          : "הבית שקט יחסית";
+
+    const rows = [
+      `${CHARACTERS.love}: קשר ${state.stats.relationship}/100 (${relationMood})`,
+      `זוגיות רשמית: ${state.flags.isMarried ? "נשוי/ה" : state.flags.isDating ? "בזוגיות" : "לא רשמי"}`,
+      `ילדים: ${state.flags.hasKids ? "יש" : "עדיין לא"}`,
+      `רומן מהצד: ${state.flags.affairActive ? "פעיל" : "לא"}`,
+      `מצב בבית: ${houseMood}`,
+      `${CHARACTERS.rival}: ${state.flags.partnerPressure ? "לוחץ/ת עליך" : "שקט/ה כרגע"}`,
+      `סיכון סחיטה: ${state.flags.blackmailRisk ? "כן" : "לא"}`
+    ];
+
+    rows.forEach((text) => {
+      const li = document.createElement("li");
+      li.className = "list-item";
+      li.textContent = text;
+      dom.relationsList.appendChild(li);
+    });
+  }
+
+  function renderClues() {
+    dom.cluesList.innerHTML = "";
+
+    if (!state.clues.length) {
+      const li = document.createElement("li");
+      li.className = "list-item";
+      li.textContent = "עוד אין רמזים.";
+      dom.cluesList.appendChild(li);
+      return;
+    }
+
+    const sorted = [...state.clues].sort((a, b) => b.discoveredAtTurn - a.discoveredAtTurn);
+    sorted.forEach((clue) => {
+      const li = document.createElement("li");
+      li.className = "list-item";
+      li.innerHTML = `<h4>${clue.text}</h4><p>${clue.category} | חומרה ${clue.severity} | תור ${clue.discoveredAtTurn}</p>`;
+      dom.cluesList.appendChild(li);
+    });
+  }
+
+  function renderEndings() {
+    dom.endingProgress.textContent = `${state.unlockedEndings.length}/${ENDINGS.length}`;
+
+    dom.endingsGrid.innerHTML = "";
+    ENDINGS.forEach((ending) => {
+      const card = document.createElement("div");
+      const unlocked = state.unlockedEndings.includes(ending.id);
+      card.className = `end-card ${unlocked ? "" : "locked"}`;
+      card.innerHTML = unlocked
+        ? `<h4>${ending.title}</h4><p>${ending.summary}</p>`
+        : `<h4>נעול</h4><p>תנסה מסלול אחר.</p>`;
+      dom.endingsGrid.appendChild(card);
+    });
+
+    dom.badgesGrid.innerHTML = "";
+    BADGES.forEach((badge) => {
+      const unlocked = state.badges.includes(badge.id);
+      const card = document.createElement("div");
+      card.className = `end-card ${unlocked ? "" : "locked"}`;
+      card.innerHTML = unlocked
+        ? `<h4>${badge.title}</h4><p>${badge.desc}</p>`
+        : `<h4>נעול</h4><p>${badge.title}</p>`;
+      dom.badgesGrid.appendChild(card);
+    });
+  }
+
+  function renderAll() {
+    applyTheme();
+    renderTopLine();
+    renderTabs();
+    renderStory();
+    renderStats();
+    renderAssets();
+    renderRelations();
+    renderClues();
+    renderEndings();
+  }
+
+  function applyEffects(effects, deltaBag) {
+    if (!effects) return;
+
+    Object.entries(effects).forEach(([key, raw]) => {
+      if (!Object.prototype.hasOwnProperty.call(state.stats, key) || !Number.isFinite(raw)) return;
+
+      const before = state.stats[key];
+      let next = before + raw;
+
+      if (PERCENT_KEYS.includes(key)) {
+        next = clampPercent(next);
+      } else if (key === "assets" || key === "debts") {
+        next = Math.max(0, Math.round(next));
+      } else {
+        next = Math.round(next);
+      }
+
+      state.stats[key] = next;
+      deltaBag[key] = (deltaBag[key] || 0) + (next - before);
+    });
+  }
+
+  function setFlags(flagBlock) {
+    if (!flagBlock) return;
+    if (Array.isArray(flagBlock.set)) {
+      flagBlock.set.forEach((flag) => {
+        state.flags[flag] = true;
+      });
+    }
+    if (Array.isArray(flagBlock.unset)) {
+      flagBlock.unset.forEach((flag) => {
+        state.flags[flag] = false;
       });
     }
   }
-  function renderTurnInfo() {
-    if (state.phase === PHASES.HOME) {
-      dom.turnIndicator.textContent = "תור 0/16";
-      dom.chapterIndicator.textContent = "מערכה 1/3";
+
+  function hasClue(clueId) {
+    return state.clues.some((clue) => clue.id === clueId);
+  }
+
+  function addClue(clueId, resultPayload) {
+    if (!CLUE_MAP.has(clueId) || hasClue(clueId)) return;
+    const clue = CLUE_MAP.get(clueId);
+
+    const discovered = {
+      id: clue.id,
+      text: clue.text,
+      severity: clue.severity,
+      category: clue.category,
+      discoveredAtTurn: state.turn
+    };
+
+    state.clues.push(discovered);
+    if (resultPayload) {
+      resultPayload.newClues.push(discovered);
+    }
+
+    if (clue.category === "קשר" || clue.category === "חשיפה") {
+      state.hidden.suspicion = clampPercent(state.hidden.suspicion + 2 + clue.severity);
+    }
+  }
+
+  function scheduleDelayed(delayedList) {
+    if (!Array.isArray(delayedList)) return;
+    delayedList.forEach((event) => {
+      if (!Number.isFinite(event.afterWeeks) || event.afterWeeks < 1) return;
+      state.delayedQueue.push({
+        weeksLeft: event.afterWeeks,
+        effects: event.effects || {},
+        revealText: event.revealText || "",
+        clues: Array.isArray(event.clues) ? event.clues : [],
+        flags: event.flags || null,
+        suspicion: Number.isFinite(event.suspicion) ? event.suspicion : 0
+      });
+    });
+  }
+
+  function processDelayed(resultPayload) {
+    if (!state.delayedQueue.length) return;
+
+    const nextQueue = [];
+    state.delayedQueue.forEach((event) => {
+      event.weeksLeft -= 1;
+      if (event.weeksLeft <= 0) {
+        applyEffects(event.effects, resultPayload.delta);
+        setFlags(event.flags);
+        event.clues.forEach((clueId) => addClue(clueId, resultPayload));
+        if (event.suspicion) {
+          state.hidden.suspicion = clampPercent(state.hidden.suspicion + event.suspicion);
+        }
+        if (event.revealText) {
+          resultPayload.lines.push(event.revealText);
+        }
+      } else {
+        nextQueue.push(event);
+      }
+    });
+    state.delayedQueue = nextQueue;
+  }
+
+  function scenarioIsAllowed(scenario) {
+    if (state.turn < scenario.minTurn || state.turn > scenario.maxTurn) return false;
+
+    if (Array.isArray(scenario.requiresFlagsAll) && !scenario.requiresFlagsAll.every((flag) => state.flags[flag])) {
+      return false;
+    }
+
+    if (Array.isArray(scenario.requiresAnyFlag) && !scenario.requiresAnyFlag.some((flag) => state.flags[flag])) {
+      return false;
+    }
+
+    if (Array.isArray(scenario.excludesFlags) && scenario.excludesFlags.some((flag) => state.flags[flag])) {
+      return false;
+    }
+
+    if (scenario.requiresStat) {
+      const r = scenario.requiresStat;
+      if (Number.isFinite(r.moneyMin) && state.stats.money < r.moneyMin) return false;
+      if (Number.isFinite(r.moneyMax) && state.stats.money > r.moneyMax) return false;
+      if (Number.isFinite(r.debtsMin) && state.stats.debts < r.debtsMin) return false;
+      if (Number.isFinite(r.debtsMax) && state.stats.debts > r.debtsMax) return false;
+    }
+
+    return true;
+  }
+
+  function shouldShowDeal() {
+    return state.turn >= 8 && state.turn % 5 === 0 && !state.hidden.dealContext;
+  }
+
+  function shouldForceConfrontation() {
+    return state.flags.affairSuspected && state.hidden.suspicion >= 78 && !state.flags.confrontationDone;
+  }
+
+  function shouldForceCaughtScene() {
+    return state.flags.caughtCheating && !state.flags.caughtSceneDone;
+  }
+
+  function shouldForceDatingScene() {
+    return !state.flags.isDating && state.stats.relationship >= 35 && state.turn >= 12 && !state.flags.dateSceneDone;
+  }
+
+  function buildDealPickScenario() {
+    return {
+      id: "special_deal_pick",
+      title: "עסקה חדשה על השולחן",
+      text: ["בחר סוג עסקה.", "בשבוע הבא תחליט אם לבדוק לעומק או לרוץ מהר."],
+      bullets: ["בטוחה / בינונית / חמה"],
+      choices: DEALS.map((deal) => ({
+        id: `pick_${deal.id}`,
+        label: `${deal.title} (${deal.line})`,
+        result: `בחרת: ${deal.title}`,
+        action: { type: "pickDeal", dealId: deal.id }
+      }))
+    };
+  }
+
+  function buildDealDueScenario() {
+    const deal = DEALS.find((item) => item.id === state.hidden.dealContext?.dealId) || DEALS[0];
+    return {
+      id: "special_deal_due",
+      title: `בדיקה לפני: ${deal.title}`,
+      text: ["עוד רגע סוגרים.", "עכשיו אתה מחליט איך נכנסים."],
+      bullets: ["בודק לעומק = יותר בטוח", "רץ מהר = יותר מסוכן"],
+      choices: [
+        {
+          id: "due_deep",
+          label: "בודק לעומק",
+          result: "בדקת לעומק לפני סגירה.",
+          action: { type: "dealDue", mode: "deep" }
+        },
+        {
+          id: "due_fast",
+          label: "רץ מהר",
+          result: "סגרת מהר בלי בדיקה מלאה.",
+          action: { type: "dealDue", mode: "fast" }
+        }
+      ]
+    };
+  }
+
+  function buildDatingScene() {
+    return {
+      id: "special_date_offer",
+      title: "מאיה רוצה תשובה",
+      text: ["\"מה אנחנו?\" היא שואלת.", "אי אפשר להישאר באמצע."],
+      bullets: ["צעד רגשי עם מחיר"],
+      choices: [
+        {
+          id: "date_yes",
+          label: "להגיד כן",
+          result: "הפכתם לרשמיים.",
+          effects: { relationship: 8, family: 4, stress: 1 },
+          flags: { set: ["isDating", "dateSceneDone"] }
+        },
+        {
+          id: "date_not_now",
+          label: "עוד לא",
+          result: "היא נעלבה.",
+          effects: { relationship: -5, stress: 3 },
+          flags: { set: ["dateSceneDone"] }
+        }
+      ]
+    };
+  }
+
+  function buildConfrontScene() {
+    return {
+      id: "special_confront",
+      title: "שיחה קשה בבית",
+      text: ["הבית מרגיש שיש משהו מוסתר.", "אתה מול קיר."],
+      bullets: ["פה נופלים או מצילים"],
+      choices: [
+        {
+          id: "confess",
+          label: "להגיד אמת חלקית",
+          result: "האמת יצאה חלקית. זה כאב.",
+          effects: { trust: -6, family: -4, stress: 3, exposure: -2 },
+          flags: { set: ["affairSuspected", "confrontationDone"] },
+          suspicion: -15
+        },
+        {
+          id: "deny",
+          label: "להכחיש הכול",
+          result: "כרגע זה עבר. החשד נשאר.",
+          effects: { trust: -8, stress: 5, exposure: 2 },
+          flags: { set: ["breakupThreat", "confrontationDone"] },
+          clues: ["c014", "c028"],
+          suspicion: 10
+        },
+        {
+          id: "attack",
+          label: "לתקוף חזרה",
+          result: "השיחה התפוצצה.",
+          effects: { trust: -12, family: -10, stress: 8 },
+          flags: { set: ["caughtCheating", "confrontationDone", "breakupThreat"] },
+          suspicion: 12
+        }
+      ]
+    };
+  }
+
+  function buildCaughtScene() {
+    return {
+      id: "special_caught",
+      title: "נתפסת",
+      text: ["הכול יצא החוצה.", "הבית והעסק נפגעו יחד."],
+      bullets: ["צריך לבחור איך לקום מפה"],
+      choices: [
+        {
+          id: "caught_break",
+          label: "להתנצל ולבקש עוד צ'אנס",
+          result: "לא בטוח שיסלחו. אבל ניסית.",
+          effects: { trust: -8, family: -6, stress: 6, relationship: -5 },
+          flags: { set: ["caughtSceneDone", "breakupThreat"] }
+        },
+        {
+          id: "caught_run",
+          label: "לברוח לעבודה ולהסתתר",
+          result: "ברחת לרעש של העסק.",
+          effects: { family: -10, stress: 8, reputation: -3, money: 3000 },
+          flags: { set: ["caughtSceneDone", "breakupThreat", "blackmailRisk"] }
+        }
+      ]
+    };
+  }
+
+  function buildFallbackScenario() {
+    return {
+      id: "fallback_week",
+      title: "שבוע שקט יחסית",
+      text: ["אין דרמה גדולה השבוע.", "אבל צריך להמשיך לזוז."],
+      bullets: ["כסף קטן או מנוחה קצרה"],
+      choices: [
+        {
+          id: "a",
+          label: "לעבוד חזק",
+          result: "שבוע עבודה מלא.",
+          effects: { money: 2500, energy: -3, stress: 2, cashflow: 1 }
+        },
+        {
+          id: "b",
+          label: "לתת לעצמך אוויר",
+          result: "נחת קצת.",
+          effects: { energy: 5, stress: -4, money: -600, family: 2 }
+        }
+      ]
+    };
+  }
+
+  function buildNextScenario() {
+    if (Array.isArray(state.hidden.pendingScenarioIds) && state.hidden.pendingScenarioIds.length) {
+      const nextId = state.hidden.pendingScenarioIds.shift();
+      const special = SCENARIO_BY_ID.get(nextId);
+      if (special) return clone(special);
+    }
+
+    if (state.hidden.dealContext && state.hidden.dealStep === "picked") {
+      state.hidden.dealStep = "due";
+      return buildDealDueScenario();
+    }
+
+    if (shouldForceCaughtScene()) {
+      return buildCaughtScene();
+    }
+
+    if (shouldForceConfrontation()) {
+      return buildConfrontScene();
+    }
+
+    if (shouldForceDatingScene()) {
+      return buildDatingScene();
+    }
+
+    if (shouldShowDeal()) {
+      return buildDealPickScenario();
+    }
+
+    const recent = state.history.slice(0, 5).map((item) => item.scenarioId);
+    const candidates = ALL_SCENARIOS.filter((scenario) => scenarioIsAllowed(scenario) && !recent.includes(scenario.id));
+
+    if (!candidates.length) {
+      return buildFallbackScenario();
+    }
+
+    return clone(pickRandom(candidates));
+  }
+
+  function applyChoiceAction(action, resultPayload) {
+    if (!action || !action.type) return;
+
+    if (action.type === "pickDeal") {
+      state.hidden.dealContext = { dealId: action.dealId };
+      state.hidden.dealStep = "picked";
+      resultPayload.lines.push("בשבוע הבא תחליט אם לבדוק לעומק או לרוץ מהר.");
       return;
     }
-    dom.turnIndicator.textContent = `תור ${Math.min(state.turn, MAX_TURNS)}/${MAX_TURNS}`;
-    dom.chapterIndicator.textContent = chapterLabel(state.turn);
-  }
 
-  function renderVisibility() {
-    const inGame = state.phase === PHASES.RUNNING || state.phase === PHASES.RESULT || state.phase === PHASES.ENDED;
-    dom.homeScreen.hidden = inGame;
-    dom.gameScreen.hidden = !inGame;
-    dom.resultBox.hidden = state.phase !== PHASES.RESULT;
-    dom.endingBox.hidden = state.phase !== PHASES.ENDED;
-    dom.scenarioCard.hidden = state.phase === PHASES.ENDED;
-    const hasSavedRun = Boolean(loadRun());
-    const canResume = hasSavedRun && state.phase === PHASES.HOME;
-    dom.continueBtn.disabled = !canResume;
-    dom.continueHomeBtn.disabled = !canResume;
-  }
+    if (action.type === "dealDue") {
+      const deal = DEALS.find((item) => item.id === state.hidden.dealContext?.dealId);
+      if (!deal) return;
 
-  function renderControls() {
-    dom.muteBtn.textContent = state.prefs.mute ? "צליל: כבוי" : "צליל: פועל";
-    applyTheme();
-  }
+      let riskScore = deal.risk;
+      if (action.mode === "deep") {
+        riskScore -= 18;
+        applyEffects({ energy: -5, stress: 2, money: -900 }, resultPayload.delta);
+      } else {
+        riskScore += 16;
+        applyEffects({ energy: -2, stress: 4, exposure: 3 }, resultPayload.delta);
+      }
 
-  function renderEnding() {
-    const ending = ENDING_BY_ID.get(state.endingId);
-    if (!ending) return;
-    dom.endingTitle.textContent = ending.title;
-    dom.endingSummary.textContent = ending.summary;
-  }
+      riskScore += Math.round(state.stats.stress * 0.12);
+      riskScore += Math.round(state.stats.exposure * 0.1);
+      riskScore -= Math.round(state.stats.investments * 0.18);
+      riskScore = Math.max(8, Math.min(92, riskScore));
 
-  function render() {
-    renderVisibility();
-    renderControls();
-    renderTurnInfo();
-    renderStats();
-    renderHistory();
-    renderClues();
-    renderCollection();
-    if (state.phase === PHASES.RUNNING || state.phase === PHASES.RESULT) renderScenario();
-    if (state.phase === PHASES.RESULT) renderResult();
-    if (state.phase === PHASES.ENDED) renderEnding();
-  }
+      const success = Math.random() * 100 > riskScore;
+      if (success) {
+        const gain = Math.round(deal.baseGain * (action.mode === "deep" ? 1 : 1.15));
+        applyEffects({ money: gain, investments: 4, reputation: 2, cashflow: 2 }, resultPayload.delta);
+        resultPayload.lines.push(`העסקה הצליחה והכניסה ${formatMoney(gain)}.`);
+        addClue(deal.clueWin, resultPayload);
+        state.flags.goodDealHit = true;
+      } else {
+        const loss = Math.round(deal.baseLoss * (action.mode === "deep" ? 0.9 : 1.2));
+        applyEffects({ money: -loss, investments: -5, stress: 6, trust: -3 }, resultPayload.delta);
+        if (state.stats.money < 0) {
+          const addDebt = Math.abs(state.stats.money);
+          state.stats.debts = Math.max(0, Math.round(state.stats.debts + addDebt));
+        }
+        resultPayload.lines.push(`העסקה התרסקה ושרפה ${formatMoney(loss)}.`);
+        addClue(deal.clueLoss, resultPayload);
+        state.flags.badDealHit = true;
+      }
 
-  function showToast(text, level = "warn") {
-    const toast = document.createElement("div");
-    toast.className = `toast ${level}`;
-    toast.textContent = text;
-    dom.toastContainer.appendChild(toast);
-    playTone(level === "alert" ? 220 : 300, 0.07, level === "alert" ? 0.07 : 0.04);
-    setTimeout(() => toast.remove(), 3400);
-  }
-
-  function unlockAudio() {
-    if (audioCtx || state.prefs.mute) return;
-    try {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    } catch (_) {
-      audioCtx = null;
+      state.hidden.dealContext = null;
+      state.hidden.dealStep = null;
+      return;
     }
   }
 
-  function playTone(freq, duration, gain) {
-    if (state.prefs.mute || !audioCtx) return;
-    const osc = audioCtx.createOscillator();
-    const amp = audioCtx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = freq;
-    amp.gain.value = gain;
-    osc.connect(amp);
-    amp.connect(audioCtx.destination);
-    const now = audioCtx.currentTime;
-    amp.gain.setValueAtTime(gain, now);
-    amp.gain.exponentialRampToValueAtTime(0.001, now + duration);
-    osc.start(now);
-    osc.stop(now + duration);
+  function applyChoice(choice, resultPayload) {
+    applyEffects(choice.effects || {}, resultPayload.delta);
+    setFlags(choice.flags);
+
+    if (Array.isArray(choice.clues)) {
+      choice.clues.forEach((clueId) => addClue(clueId, resultPayload));
+    }
+
+    if (Array.isArray(choice.delayed)) {
+      scheduleDelayed(choice.delayed);
+    }
+
+    if (Number.isFinite(choice.suspicion)) {
+      state.hidden.suspicion = clampPercent(state.hidden.suspicion + choice.suspicion);
+    }
+
+    if (Array.isArray(choice.queueScenarioIds)) {
+      state.hidden.pendingScenarioIds.push(...choice.queueScenarioIds);
+    }
+
+    applyChoiceAction(choice.action, resultPayload);
   }
 
-  function handleChoice(scenarioId, choiceId) {
-    if (state.phase !== PHASES.RUNNING) return;
-    const scenario = SCENARIO_BY_ID.get(scenarioId);
-    if (!scenario || scenario.id !== state.currentScenarioId) return;
-    const choice = scenario.choices.find((item) => item.id === choiceId);
+  function maybeAddRandomEvent(resultPayload) {
+    if (state.turn < 4 || state.turn % 2 !== 0) return;
+    if (Math.random() > 0.55) return;
+
+    const available = RANDOM_EVENTS.filter((event) => {
+      if (Array.isArray(event.needsFlags) && !event.needsFlags.every((flag) => state.flags[flag])) return false;
+      return true;
+    });
+
+    const event = pickRandom(available);
+    if (!event) return;
+
+    applyEffects(event.effects || {}, resultPayload.delta);
+    setFlags(event.flags);
+    (event.clues || []).forEach((clueId) => addClue(clueId, resultPayload));
+    resultPayload.lines.push(`אירוע צד: ${event.text}`);
+  }
+
+  function runMonthlyCycle(resultPayload) {
+    if (state.week % WEEKS_IN_MONTH !== 0) return;
+
+    let income = Math.round((state.stats.cashflow * 70) + (state.stats.reputation * 45));
+    if (state.flags.businessOpened) {
+      income += 4500;
+    }
+
+    const marketRoll = randInt(-12, 12);
+    const investFlow = Math.round((state.stats.investments * 95) + marketRoll * 220);
+
+    let familyCost = 1800;
+    if (state.flags.isDating) familyCost += 900;
+    if (state.flags.isMarried) familyCost += 2200;
+    if (state.flags.hasKids) familyCost += 3800;
+    if (state.flags.familyNeedCash) familyCost += 1200;
+
+    let debtPay = 0;
+    if (state.stats.debts > 0) {
+      debtPay = Math.min(Math.max(1500, Math.round(state.stats.debts * 0.05)), state.stats.debts);
+      state.stats.debts = Math.max(0, Math.round(state.stats.debts - debtPay));
+    }
+
+    let monthlyItemMoney = 0;
+    state.ownedItems.forEach((itemId) => {
+      const item = ITEM_MAP.get(itemId);
+      if (!item) return;
+      const monthly = item.monthly || {};
+      monthlyItemMoney += Number.isFinite(monthly.money) ? monthly.money : 0;
+      applyEffects({ ...monthly, money: 0 }, resultPayload.delta);
+      if (item.risk === "גבוה" && Math.random() < 0.18) {
+        addClue(pickRandom(["c002", "c024", "c035", "c042"]), resultPayload);
+      }
+    });
+
+    const monthDelta = income + investFlow + monthlyItemMoney - familyCost - debtPay;
+    applyEffects({ money: monthDelta }, resultPayload.delta);
+
+    if (state.stats.money < 0) {
+      const needDebt = Math.abs(state.stats.money);
+      state.stats.debts += needDebt;
+      state.stats.money = 0;
+      applyEffects({ stress: 6, trust: -2, cashflow: -3 }, resultPayload.delta);
+      resultPayload.lines.push("לא היה מספיק כסף. חלק עבר לחוב.");
+    }
+
+    const summary = `החודש: הכנסה ${formatMoney(income)} + השקעות ${formatMoney(investFlow)} + רכוש ${formatMoney(monthlyItemMoney)} - בית ${formatMoney(familyCost)} - חוב ${formatMoney(debtPay)}.`;
+    state.lastMonthSummary = summary;
+    resultPayload.lines.push(summary);
+
+    if (state.flags.familyNeedCash && Math.random() < 0.35) {
+      state.flags.familyNeedCash = false;
+    }
+  }
+
+  function checkSuspicionAndConsequences(resultPayload) {
+    if (state.flags.affairActive && (state.flags.isDating || state.flags.isMarried)) {
+      state.hidden.suspicion = clampPercent(state.hidden.suspicion + 2);
+    }
+
+    if (state.hidden.suspicion >= 60 && !state.flags.affairSuspected) {
+      state.flags.affairSuspected = true;
+      showToast("האווירה בבית מתוחה. יש חשד.", "alert");
+      resultPayload.lines.push("הבית מתחיל לחשוד ברצינות.");
+    }
+
+    if (state.hidden.suspicion >= 88 && state.flags.affairActive && !state.flags.caughtCheating) {
+      state.flags.caughtCheating = true;
+      showToast("מישהו תפס את הסיפור שלך.", "alert");
+      resultPayload.lines.push("זהו. כבר אי אפשר להסתיר.");
+    }
+
+    if (state.hidden.suspicion >= 70 && !state.flags.caughtCheating) {
+      unlockBadge("badge_almost_caught");
+    }
+  }
+
+  function updateDangerMeter() {
+    let dangerHit = 0;
+    if (state.stats.money < -20000) dangerHit += 1;
+    if (state.stats.debts > 90000) dangerHit += 1;
+    if (state.stats.stress > 92) dangerHit += 1;
+    if (state.stats.energy < 10) dangerHit += 1;
+    if (state.stats.exposure > 88) dangerHit += 1;
+
+    if (dangerHit >= 2) {
+      state.hidden.danger = Math.min(7, state.hidden.danger + 1);
+    } else {
+      state.hidden.danger = Math.max(0, state.hidden.danger - 1);
+    }
+  }
+
+  function maybeShowWarnings() {
+    const checks = [
+      { key: "m1", active: state.stats.money < 0, text: "אזהרה: אתה במינוס" },
+      { key: "m2", active: state.stats.cashflow < 25, text: "אזהרה: תזרים נמוך" },
+      { key: "m3", active: state.stats.stress > 85, text: "הלחץ קופץ גבוה" },
+      { key: "m4", active: state.stats.exposure > 75, text: "הרבה אנשים כבר יודעים עליך" },
+      { key: "m5", active: state.stats.trust < 25, text: "כמעט לא סומכים עליך" },
+      { key: "m6", active: state.stats.relationship > 80, text: "הקשר חזק ומסוכן" }
+    ];
+
+    if (!state.hidden.warnState) {
+      state.hidden.warnState = {};
+    }
+
+    checks.forEach((check) => {
+      if (check.active && !state.hidden.warnState[check.key]) {
+        showToast(check.text, "alert");
+      }
+      state.hidden.warnState[check.key] = check.active;
+    });
+  }
+
+  function checkEnding(forced = false) {
+    if (state.freeMode) return null;
+
+    if (state.turn < 60 && !forced) {
+      if (state.hidden.danger >= 4) {
+        if (state.stats.stress >= 98 || state.stats.energy <= 2) return "burnout";
+        if (state.stats.money < -45000 && state.stats.debts > 100000) return "collapse";
+        if (state.stats.exposure > 95 && state.flags.leakActive) return "scandal";
+      }
+      return null;
+    }
+
+    if (state.stats.money >= 180000 && state.stats.assets >= 280000 && state.stats.trust >= 60 && state.stats.exposure <= 55) return "cold_win";
+    if (state.stats.family >= 80 && state.stats.trust >= 65 && !state.flags.affairActive) return "family_win";
+    if (state.stats.exposure >= 90 && (hasClue("c001") || hasClue("c029"))) return "scandal";
+    if (state.stats.money < -50000 && state.stats.debts > 120000 && state.stats.cashflow < 20) return "collapse";
+    if (state.stats.stress >= 96 || state.stats.energy <= 3) return "burnout";
+    if (state.flags.caughtCheating && state.stats.trust < 18) return "betrayal";
+    if (state.flags.legalRisk && (hasClue("c031") || hasClue("c040")) && state.stats.exposure > 70) return "legal_trouble";
+    if (state.flags.affairActive && !state.flags.caughtCheating && state.stats.relationship > 75 && state.hidden.suspicion < 55 && state.turn >= 90) return "double_life";
+    if (state.flags.rebuiltAfterFall && state.stats.trust >= 55 && state.stats.debts < 20000 && state.turn >= 90) return "redemption";
+    if (state.stats.reputation >= 75 && state.stats.cashflow >= 70 && state.stats.exposure < 45) return "quiet_money";
+    if (state.stats.money > 250000 && state.stats.trust < 35 && state.stats.exposure > 60) return "dirty_rich";
+    if (state.stats.reputation > 82 && state.stats.family < 35 && state.stats.relationship < 25) return "alone_top";
+    if (state.stats.family > 70 && state.stats.money < 20000 && state.stats.debts < 30000) return "broke_home";
+    if (state.flags.blackmailRisk && state.stats.exposure > 65) return "blackmail";
+    if (state.flags.caughtCheating && state.flags.isMarried && state.stats.family < 30) return "divorce_public";
+    if (!state.flags.isMarried && state.stats.relationship >= 80 && state.stats.trust >= 55 && !state.flags.affairActive) return "second_chance";
+    if (state.stats.assets > 400000 && state.stats.reputation > 80 && state.stats.cashflow > 75) return "business_empire";
+    if (state.flags.affairSuspected && !state.flags.caughtCheating && state.stats.stress > 80 && state.stats.exposure < 60) return "hidden_fire";
+    if (state.flags.investigationOpen && !state.flags.legalRisk && state.stats.trust > 55) return "law_clear";
+
+    if (forced || state.turn >= state.maxTurns) return "long_run";
+    return null;
+  }
+
+  function evaluateBadges() {
+    if (state.ownedItems.includes("item_small_apartment")) unlockBadge("badge_first_apartment");
+    if (state.flags.goodDealHit) unlockBadge("badge_good_invest");
+    if (state.flags.isMarried) unlockBadge("badge_wedding");
+    if (state.flags.businessOpened || state.ownedItems.includes("item_business")) unlockBadge("badge_first_business");
+    if (state.flags.rebuiltAfterFall && state.stats.money > 40000) unlockBadge("badge_big_rebuild");
+    if (state.flags.affairActive && state.hidden.suspicion < 40 && state.turn > 70) unlockBadge("badge_secret_master");
+    if (state.flags.investigationOpen && !state.flags.legalRisk && state.turn > 80) unlockBadge("badge_legal_escape");
+  }
+
+  function handleChoice(choiceId) {
+    if (state.phase !== PHASES.RUNNING || !state.currentScenario) return;
+
+    const choice = state.currentScenario.choices.find((item) => item.id === choiceId);
     if (!choice) return;
 
-    playTone(360, 0.04, 0.03);
+    const resultPayload = {
+      main: choice.result || "שבוע עבר.",
+      lines: [],
+      newClues: [],
+      delta: {},
+      endingId: null
+    };
+
+    processDelayed(resultPayload);
+    applyChoice(choice, resultPayload);
+    maybeAddRandomEvent(resultPayload);
+    runMonthlyCycle(resultPayload);
+    checkSuspicionAndConsequences(resultPayload);
+    updateDangerMeter();
+    maybeShowWarnings();
+
+    state.history.unshift({
+      turn: state.turn,
+      scenarioId: state.currentScenario.id,
+      title: state.currentScenario.title,
+      choiceLabel: choice.label
+    });
+    state.history = state.history.slice(0, 40);
+
+    evaluateBadges();
+
+    const endingId = checkEnding(false);
+    if (endingId) {
+      resultPayload.endingId = endingId;
+    } else if (!state.freeMode && state.turn >= state.maxTurns) {
+      resultPayload.endingId = checkEnding(true);
+    }
+
+    state.resultPayload = resultPayload;
     state.phase = PHASES.RESULT;
-
-    const resultPack = { mainText: choice.resultText, delta: {}, reveals: [], newClues: [] };
-    applyEffects(choice.immediateEffects, resultPack.delta);
-    applyFlagChanges(choice.flags);
-    if (Array.isArray(choice.clues)) choice.clues.forEach((clueId) => addClue(clueId, state.turn, resultPack));
-    scheduleDelayed(choice.delayed);
-    processDelayed(resultPack);
-    triggerRandomEvent(resultPack);
-
-    state.history.unshift({ turn: state.turn, title: scenario.title, choiceLabel: choice.label });
-    if (state.history.length > 24) state.history = state.history.slice(0, 24);
-
-    checkWarnings();
-    const route = resolveNext(choice.next);
-    state.pendingNext = route;
-    const forcedByState = checkEnding(false);
-    state.pendingEnding = forcedByState;
-    if (!state.pendingEnding && typeof route === "string" && route.startsWith("END:")) state.pendingEnding = route.slice(4);
-    if (!state.pendingEnding && state.turn >= state.maxTurns) state.pendingEnding = checkEnding(true);
-
-    state.resultPayload = resultPack;
     saveRun();
-    render();
+    renderAll();
   }
 
   function finalizeEnding(endingId) {
-    const finalId = ENDING_BY_ID.has(endingId) ? endingId : "last_minute_save";
-    state.phase = PHASES.ENDED;
+    const finalId = ENDING_MAP.has(endingId) ? endingId : "long_run";
     state.endingId = finalId;
-    state.pendingNext = null;
-    state.pendingEnding = null;
+    state.phase = PHASES.ENDED;
     state.resultPayload = null;
     unlockEnding(finalId);
     clearRun();
-    render();
+    saveMeta();
+    renderAll();
   }
 
   function goNextTurn() {
     if (state.phase !== PHASES.RESULT) return;
-    if (state.pendingEnding) {
-      finalizeEnding(state.pendingEnding);
-      return;
-    }
-    const route = state.pendingNext;
-    if (typeof route === "string" && route.startsWith("END:")) {
-      finalizeEnding(route.slice(4));
+
+    if (state.resultPayload?.endingId) {
+      finalizeEnding(state.resultPayload.endingId);
       return;
     }
 
     state.turn += 1;
-    state.currentScenarioId = SCENARIO_BY_ID.has(route) ? route : "s030";
+    state.week += 1;
+    state.month = Math.floor((state.week - 1) / WEEKS_IN_MONTH) + 1;
+
     state.phase = PHASES.RUNNING;
-    state.pendingNext = null;
-    state.pendingEnding = null;
     state.resultPayload = null;
 
-    if (state.turn > state.maxTurns) {
+    if (!state.freeMode && state.turn > state.maxTurns) {
       finalizeEnding(checkEnding(true));
       return;
     }
 
+    state.currentScenario = buildNextScenario();
     saveRun();
-    render();
+    renderAll();
+  }
+
+  function buyItem(itemId) {
+    if (state.phase !== PHASES.RUNNING) return;
+    const item = ITEM_MAP.get(itemId);
+    if (!item || state.ownedItems.includes(itemId)) return;
+    if (state.stats.money < item.price) {
+      showToast("אין לך מספיק כסף", "alert");
+      return;
+    }
+
+    state.ownedItems.push(itemId);
+    applyEffects({ money: -item.price, assets: item.price }, {});
+
+    if (itemId === "item_business") {
+      state.flags.businessOpened = true;
+    }
+
+    if (itemId === "item_small_apartment") {
+      unlockBadge("badge_first_apartment");
+    }
+
+    showToast(`קנית: ${item.name}`);
+    evaluateBadges();
+    saveRun();
+    renderAll();
+  }
+
+  function sellItem(itemId) {
+    if (state.phase !== PHASES.RUNNING) return;
+    const item = ITEM_MAP.get(itemId);
+    if (!item) return;
+
+    state.ownedItems = state.ownedItems.filter((id) => id !== itemId);
+    applyEffects({ money: Math.round(item.price * 0.75), assets: -item.price }, {});
+
+    showToast(`מכרת: ${item.name}`);
+    saveRun();
+    renderAll();
   }
 
   function startNewGame() {
     clearRun();
-    resetRun();
+    resetRun(false);
     saveRun();
-    render();
+    renderAll();
+  }
+
+  function startFreeMode() {
+    if (!state.unlockedEndings.length) return;
+    clearRun();
+    resetRun(true);
+    saveRun();
+    renderAll();
   }
 
   function continueGame() {
-    const saved = loadRun();
-    if (!saved) return;
-    hydrateRun(saved);
-    render();
+    const run = readJson(STORAGE_KEYS.run, null);
+    if (!run) return;
+    loadAllStorage();
+
+    if (state.phase !== PHASES.RUNNING && state.phase !== PHASES.RESULT) {
+      state.phase = PHASES.RUNNING;
+    }
+
+    if (!state.currentScenario) {
+      state.currentScenario = buildNextScenario();
+    }
+
+    renderAll();
   }
 
-  function backHome() {
+  function goHome() {
     state.phase = PHASES.HOME;
-    state.currentScenarioId = null;
-    state.pendingNext = null;
-    state.pendingEnding = null;
+    state.currentScenario = null;
     state.resultPayload = null;
     state.endingId = null;
-    render();
+    renderAll();
   }
 
-  function bindListeners() {
-    dom.startBtn.addEventListener("click", startNewGame);
-    dom.startHomeBtn.addEventListener("click", startNewGame);
+  function bindEvents() {
+    dom.newGameBtn.addEventListener("click", startNewGame);
+    dom.homeNewBtn.addEventListener("click", startNewGame);
     dom.continueBtn.addEventListener("click", continueGame);
-    dom.continueHomeBtn.addEventListener("click", continueGame);
+    dom.homeContinueBtn.addEventListener("click", continueGame);
+    dom.freeModeBtn.addEventListener("click", startFreeMode);
+    dom.homeFreeBtn.addEventListener("click", startFreeMode);
+    dom.endingFreeBtn.addEventListener("click", startFreeMode);
+    dom.endingNewBtn.addEventListener("click", startNewGame);
     dom.nextTurnBtn.addEventListener("click", goNextTurn);
-    dom.restartFromEndBtn.addEventListener("click", startNewGame);
-    dom.backHomeBtn.addEventListener("click", backHome);
 
-    dom.helpBtn.addEventListener("click", () => dom.helpModal.showModal());
-    dom.closeHelpBtn.addEventListener("click", () => dom.helpModal.close());
+    dom.helpBtn.addEventListener("click", () => dom.helpDialog.showModal());
+    dom.closeHelpBtn.addEventListener("click", () => dom.helpDialog.close());
 
     dom.themeBtn.addEventListener("click", () => {
-      state.prefs.theme = state.prefs.theme === "dark" ? "light" : "dark";
-      savePrefs();
-      applyTheme();
-      render();
+      state.theme = state.theme === "dark" ? "light" : "dark";
+      saveMeta();
+      saveRun();
+      renderAll();
     });
 
-    dom.muteBtn.addEventListener("click", () => {
-      state.prefs.mute = !state.prefs.mute;
-      if (!state.prefs.mute) unlockAudio();
-      savePrefs();
-      renderControls();
+    dom.tabButtons.forEach((button) => {
+      button.addEventListener("click", () => setTab(button.dataset.tabBtn));
     });
 
-    document.addEventListener("pointerdown", () => unlockAudio(), { once: true });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && dom.helpModal.open) dom.helpModal.close();
+      if (event.key === "Escape" && dom.helpDialog.open) dom.helpDialog.close();
     });
+
+    dom.endingCard.addEventListener("dblclick", goHome);
   }
 
   function init() {
-    loadPrefs();
-    applyTheme();
-    bindListeners();
-    render();
+    loadAllStorage();
+    bindEvents();
+
+    if (state.phase === PHASES.RUNNING || state.phase === PHASES.RESULT) {
+      if (!state.currentScenario) state.currentScenario = buildNextScenario();
+    } else {
+      state.phase = PHASES.HOME;
+    }
+
+    renderAll();
   }
 
   init();
 })();
-

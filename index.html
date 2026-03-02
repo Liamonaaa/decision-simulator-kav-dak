@@ -11,104 +11,142 @@
     <header class="topbar" aria-label="סרגל עליון">
       <div class="title-wrap">
         <h1>סימולטור החלטות: קו דק</h1>
-        <p id="chapterIndicator" class="chapter">מערכה 1/3</p>
+        <p id="timeIndicator" class="meta-line">שבוע 1, חודש 1</p>
       </div>
-      <div class="top-controls" aria-label="פעולות ראשיות">
-        <button id="startBtn" class="btn btn-main" aria-label="התחל חדש">התחל חדש</button>
-        <button id="continueBtn" class="btn" aria-label="המשך">המשך</button>
+
+      <div class="top-actions" aria-label="פעולות">
+        <button id="newGameBtn" class="btn btn-main" aria-label="התחל חדש">התחל חדש</button>
+        <button id="continueBtn" class="btn" aria-label="המשך משחק">המשך</button>
+        <button id="freeModeBtn" class="btn" aria-label="המשך חופשי" hidden>המשך חופשי+</button>
         <button id="helpBtn" class="btn" aria-label="עזרה">עזרה</button>
-        <button id="themeBtn" class="btn" aria-label="החלפת ערכת נושא">מצב: כהה</button>
-        <button id="muteBtn" class="btn" aria-label="השתקת צליל">צליל: פועל</button>
+        <button id="themeBtn" class="btn" aria-label="מצב כהה או בהיר">מצב: כהה</button>
       </div>
-      <div class="turn-wrap" aria-live="polite">
-        <span id="turnIndicator">תור 0/16</span>
+
+      <div class="status-row" aria-live="polite">
+        <span id="turnIndicator">תור 1/120</span>
+        <span id="seasonIndicator">עונה 1/4</span>
       </div>
     </header>
 
-    <main class="main-layout">
-      <section id="homeScreen" class="panel home-panel" aria-label="מסך פתיחה">
-        <div class="home-card">
-          <h2>המשחק מתחיל כשאין אוויר</h2>
-          <p>עסק קטן. כסף דק. משפחה על סף פיצוץ.</p>
-          <p>וכל קרבה יכולה להפוך ללחץ או למנוף.</p>
+    <main class="main-area">
+      <section id="storyTab" class="tab-panel" data-tab="story">
+        <div id="homeCard" class="card home-card">
+          <h2>אתה מתחיל עם לחץ וכסף קצר</h2>
+          <p>כל בחירה משנה עסק, בית וקשר.</p>
+          <p>מה שאתה עושה בלילה, יכול ליפול עליך בבוקר.</p>
           <div class="home-actions">
-            <button id="startHomeBtn" class="btn btn-main" aria-label="התחלת משחק">התחל ריצה חדשה</button>
-            <button id="continueHomeBtn" class="btn" aria-label="המשך משחק שמור">המשך ריצה שמורה</button>
+            <button id="homeNewBtn" class="btn btn-main">התחל משחק חדש</button>
+            <button id="homeContinueBtn" class="btn">המשך משחק שמור</button>
+            <button id="homeFreeBtn" class="btn" hidden>המשך חופשי+</button>
           </div>
         </div>
 
-        <div class="collection-card" aria-label="סיומות שנפתחו">
-          <h3>סיומות שנפתחו</h3>
-          <p id="endingProgress">0/14</p>
-          <div id="endingsGrid" class="endings-grid"></div>
-        </div>
-      </section>
-
-      <section id="gameScreen" class="panel game-panel" hidden aria-label="מסך משחק">
-        <article class="scenario-card" id="scenarioCard">
+        <article id="scenarioCard" class="card" hidden>
           <h2 id="scenarioTitle">-</h2>
-          <div id="scenarioText" class="scenario-text"></div>
-          <ul id="scenarioBullets" class="scenario-bullets"></ul>
-          <div id="choicesContainer" class="choices" aria-label="אפשרויות בחירה"></div>
+          <div id="scenarioText" class="text-lines"></div>
+          <ul id="scenarioBullets" class="bullets"></ul>
+          <div id="choicesBox" class="choices" aria-label="אפשרויות"></div>
         </article>
 
-        <section id="resultBox" class="result-box" hidden aria-live="polite">
-          <h3>תוצאה</h3>
-          <p id="resultText"></p>
-          <ul id="resultReveals" class="reveal-list"></ul>
+        <section id="resultCard" class="card" hidden aria-live="polite">
+          <h3>מה קרה עכשיו</h3>
+          <p id="resultMain"></p>
+          <ul id="resultExtra" class="bullets"></ul>
           <div id="resultClue" class="result-clue" hidden></div>
-          <div id="deltaChips" class="chips"></div>
-          <button id="nextTurnBtn" class="btn btn-main" aria-label="המשך לתור הבא">המשך</button>
+          <div id="deltaBox" class="chips"></div>
+          <button id="nextTurnBtn" class="btn btn-main">המשך לשבוע הבא</button>
         </section>
 
-        <section id="endingBox" class="ending-box" hidden aria-live="polite">
+        <section id="endingCard" class="card" hidden>
           <h2 id="endingTitle"></h2>
-          <p id="endingSummary"></p>
-          <div class="ending-actions">
-            <button id="restartFromEndBtn" class="btn btn-main" aria-label="התחלת משחק חדש">התחל חדש</button>
-            <button id="backHomeBtn" class="btn" aria-label="חזרה למסך פתיחה">חזרה לפתיחה</button>
+          <p id="endingText"></p>
+          <div class="end-actions">
+            <button id="endingNewBtn" class="btn btn-main">משחק חדש</button>
+            <button id="endingFreeBtn" class="btn" hidden>המשך חופשי+</button>
           </div>
+        </section>
+
+        <section id="monthSummaryCard" class="card" hidden>
+          <h3>סיכום חודש</h3>
+          <p id="monthSummaryText"></p>
         </section>
       </section>
 
-      <aside class="panel side-panel" aria-label="מידע חי">
-        <section class="stats-card">
-          <h3>מדדים חיים</h3>
-          <div id="moneyDisplay" class="money-display">כסף: ₪0</div>
-          <div id="statsBars" class="stat-bars"></div>
-        </section>
+      <section id="statsTab" class="tab-panel" data-tab="stats" hidden>
+        <div class="card">
+          <h2>סטטיסטיקות</h2>
+          <div id="moneyLine" class="value-line">כסף: ₪0</div>
+          <div id="assetsLine" class="value-line">נכסים: ₪0</div>
+          <div id="debtsLine" class="value-line">חובות: ₪0</div>
+          <div id="statsBars" class="bars"></div>
+        </div>
+      </section>
 
-        <details class="log-card" open>
-          <summary>תיק אירועים</summary>
-          <ul id="historyList" class="history-list"></ul>
-        </details>
+      <section id="assetsTab" class="tab-panel" data-tab="assets" hidden>
+        <div class="card">
+          <h2>רכוש</h2>
+          <p class="small">מה שקנית משפיע כל חודש.</p>
+          <div id="ownedList" class="list"></div>
+        </div>
+        <div class="card">
+          <h3>מה אפשר לקנות</h3>
+          <div id="storeList" class="list"></div>
+        </div>
+      </section>
 
-        <details class="clues-card" open>
-          <summary>רמזים</summary>
-          <ul id="cluesList" class="clues-list"></ul>
-        </details>
-      </aside>
+      <section id="relationsTab" class="tab-panel" data-tab="relations" hidden>
+        <div class="card">
+          <h2>קשרים</h2>
+          <ul id="relationsList" class="list plain"></ul>
+        </div>
+      </section>
+
+      <section id="cluesTab" class="tab-panel" data-tab="clues" hidden>
+        <div class="card">
+          <h2>רמזים</h2>
+          <ul id="cluesList" class="list plain"></ul>
+        </div>
+      </section>
+
+      <section id="endingsTab" class="tab-panel" data-tab="endings" hidden>
+        <div class="card">
+          <h2>סיומות שנפתחו</h2>
+          <p id="endingProgress">0/20</p>
+          <div id="endingsGrid" class="end-grid"></div>
+        </div>
+        <div class="card">
+          <h3>באג'ים</h3>
+          <div id="badgesGrid" class="end-grid"></div>
+        </div>
+      </section>
     </main>
+
+    <nav class="bottom-nav" aria-label="ניווט">
+      <button class="tab-btn active" data-tab-btn="story">סיפור</button>
+      <button class="tab-btn" data-tab-btn="stats">סטטיסטיקות</button>
+      <button class="tab-btn" data-tab-btn="assets">רכוש</button>
+      <button class="tab-btn" data-tab-btn="relations">קשרים</button>
+      <button class="tab-btn" data-tab-btn="clues">רמזים</button>
+      <button class="tab-btn" data-tab-btn="endings">סיומות</button>
+    </nav>
   </div>
 
-  <div id="toastContainer" class="toast-container" aria-live="assertive"></div>
+  <div id="toastBox" class="toast-box" aria-live="assertive"></div>
 
-  <dialog id="helpModal" aria-label="עזרה">
-    <article class="help-content">
-      <h2>עזרה</h2>
-      <p>כל בחירה משנה כמה מדדים יחד. חלק מהמחיר מגיע מאוחר.</p>
+  <dialog id="helpDialog" aria-label="עזרה">
+    <article class="help-body">
+      <h2>איך זה עובד</h2>
+      <p>כל שבוע אתה בוחר צעד. זה משפיע על כסף, עסק, בית וקשר.</p>
       <ul>
-        <li><strong>כסף:</strong> יתרה מיידית, יכולה לרדת למינוס.</li>
-        <li><strong>תזרים:</strong> יציבות תשלומים קרובים.</li>
-        <li><strong>תיק השקעות:</strong> עמדת הסיכון והפוטנציאל שלך.</li>
-        <li><strong>אנרגיה:</strong> יכולת להחזיק קצב.</li>
-        <li><strong>לחץ:</strong> עומס מצטבר. גבוה מדי שובר.</li>
-        <li><strong>חשיפה:</strong> סיכוי לדליפה, שמועה או פגיעה תדמיתית.</li>
-        <li><strong>אמינות:</strong> אמון מול שותפים, משפחה ושוק.</li>
-        <li><strong>קרבה:</strong> משיכה והשפעה רגשית. גבוה מדי מסוכן.</li>
+        <li><strong>תזרים</strong>: כמה העסק מחזיק את החודש.</li>
+        <li><strong>השקעות</strong>: כמה חזק התיק שלך.</li>
+        <li><strong>כמה יודעים עליך</strong>: כמה אנשים כבר שמעו על מה שאתה עושה.</li>
+        <li><strong>כמה סומכים עליך</strong>: כמה אנשים מאמינים לך.</li>
+        <li><strong>קשר</strong>: מה קורה בינך לבין מאיה.</li>
+        <li><strong>בית/משפחה</strong>: כמה הבית יציב כרגע.</li>
       </ul>
-      <p>השפעות מושהות מופעלות אחרי כמה תורות, גם אם שכחת מה גרם להן.</p>
-      <button id="closeHelpBtn" class="btn btn-main" aria-label="סגירת עזרה">סגור</button>
+      <p>מה שבחרת היום יכול לחזור אליך עוד כמה שבועות.</p>
+      <button id="closeHelpBtn" class="btn btn-main">סגור</button>
     </article>
   </dialog>
 
