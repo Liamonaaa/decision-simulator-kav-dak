@@ -1,0 +1,3970 @@
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  increment,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  writeBatch,
+} from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
+import { db } from "./src/firebase.js";
+
+// עריכת שעות פעילות: 0=א', 1=ב', ... , 6=שבת
+const WORKING_HOURS = {
+  0: { open: '00:00', close: '00:00', label: 'יום א׳' },
+  1: { open: '00:00', close: '00:00', label: 'יום ב׳' },
+  2: { open: '00:00', close: '00:00', label: 'יום ג׳' },
+  3: { open: '00:00', close: '00:00', label: 'יום ד׳' },
+  4: { open: '00:00', close: '00:00', label: 'יום ה׳' },
+  5: { open: '00:00', close: '00:00', label: 'יום ו׳' },
+  6: { open: '00:00', close: '00:00', label: 'שבת' },
+};
+
+const BUSINESS_NAME = 'חזי בצומת';
+const BUSINESS_ADDRESS = 'צומת אבן יהודה';
+const PHONE = '050-0000000';
+const SUPPORT_CHAT_STORAGE_KEY = 'shawarma-hezi-support-chat-v1';
+const SUPPORT_CHAT_DEVICE_KEY = 'shawarma-hezi-support-device-id-v1';
+const SUPPORT_CHAT_MAX_CHARS = 500;
+const STORAGE_KEY = 'itziks-cart-order-v2';
+const LAST_ORDER_ID_KEY = 'itziks-cart-last-order-id';
+const SLOT_STEP_MINUTES = 15;
+const PREP_TIME_MINUTES = 15;
+const DRINK_UPSELL_ITEM_ID = 'drink-can';
+const PRE_SUBMIT_DRINK_CHOICES = [
+  { label: 'קולה', candidates: ['קוקה קולה', 'קולה'] },
+  { label: 'קולה זירו', candidates: ['קוקה קולה זירו', 'קולה זירו'] },
+  { label: 'ספרייט', candidates: ['ספרייט'] },
+  { label: 'פנטה', candidates: ['פאנטה תפוזים', 'פנטה', 'פאנטה'] },
+  { label: 'מים', candidates: ['מים מינרליים', 'מים'] },
+];
+const DRINK_NAME_KEYWORDS = [
+  'שתייה',
+  'שתיה',
+  'קולה',
+  'זירו',
+  'ספרייט',
+  'פנטה',
+  'פאנטה',
+  'מים',
+  'cola',
+  'sprite',
+  'fanta',
+  'water',
+  'drink',
+  'soda',
+];
+const IS_DEV = /(^localhost$)|(^127\.)|(^0\.0\.0\.0$)/.test(window.location.hostname);
+const CART_REMINDER_MIN_DELAY_MS = 180000;
+const CART_REMINDER_MAX_DELAY_MS = 300000;
+const CART_REMINDER_SESSION_KEYS = {
+  timerStartedAt: 'itziks-cart-reminder-timer-started-at',
+  plannedFireAt: 'itziks-cart-reminder-planned-fire-at',
+  reminderShown: 'itziks-cart-reminder-shown',
+  orderSubmitted: 'itziks-cart-reminder-order-submitted',
+};
+const ORDERING_HOURS_LABEL = 'פתוח 24/7';
+const CLOSED_ORDERING_MESSAGE = 'ההזמנות זמינות 24/7';
+
+const SANDWICH_ITEM_IDS = new Set([
+  'pita-veal',
+  'pita-turkey',
+  'laffa-veal',
+  'laffa-turkey',
+]);
+const DRINK_ITEM_IDS = new Set([
+  'drink-can',
+  'drink-bottle-05',
+  'drink-bottle-15',
+]);
+const DRINK_CATEGORY_LABEL = 'שתייה';
+const DRINK_TYPE_OPTIONS = [
+  'קוקה קולה',
+  'קוקה קולה זירו',
+  'קוקה קולה דיאט',
+  'ספרייט',
+  'ספרייט זירו',
+  'פאנטה תפוזים',
+  'פאנטה ענבים',
+  'קינלי טוניק',
+  'קינלי סודה',
+  'קינלי ג׳ינג׳ר אייל',
+  'פיוז טי אפרסק',
+  'פיוז טי לימון',
+  'נסטי אפרסק',
+  'נסטי לימון',
+  'מים מינרליים',
+  'מים מינרליים מוגזים',
+  'פריגת/מיץ תפוזים',
+  'פריגת/מיץ ענבים',
+  'פריגת/מיץ תפוחים',
+  'XL',
+  'XL זירו',
+  'רדבול',
+  'בירה שחורה (מאלטי)',
+  'שוקו',
+  'לימונדה',
+  'קפה קר',
+  'טרופית',
+  'ענבים סחוט',
+  'תפוזים סחוט',
+  'לימונענע',
+  'סיידר תפוחים',
+  'יוגורט לשתייה',
+];
+const DRINK_TYPE_SET = new Set(DRINK_TYPE_OPTIONS);
+
+const SALAD_OPTIONS = [
+  'עגבנייה',
+  'מלפפון',
+  'בצל',
+  'כרוב',
+  'חציל',
+  'פטרוזיליה',
+  'סלט חריף',
+  'סלט ירוק',
+];
+
+const SAUCE_OPTIONS = [
+  'טחינה',
+  'עמבה',
+  'שום',
+  'חריף',
+  'ברביקיו',
+  'מיונז',
+];
+
+const PICKLE_OPTIONS = [
+  'מלפפון חמוץ',
+  'לפת',
+  'זיתים',
+  'פלפל חריף',
+];
+const SALAD_OPTION_SET = new Set(SALAD_OPTIONS);
+const SAUCE_OPTION_SET = new Set(SAUCE_OPTIONS);
+const PICKLE_OPTION_SET = new Set(PICKLE_OPTIONS);
+
+const PAID_ADDONS = [
+  { id: 'hummus', label: 'חומוס', price: 6 },
+  { id: 'egg', label: 'ביצה קשה', price: 5 },
+  { id: 'double-meat', label: 'בשר כפול', price: 18 },
+];
+const PAID_ADDON_IDS = new Set(PAID_ADDONS.map((addon) => addon.id));
+const PAID_ADDON_BY_ID = new Map(PAID_ADDONS.map((addon) => [addon.id, addon]));
+
+const DEFAULT_SANDWICH_OPTIONS = {
+  salads: [],
+  sauces: [],
+  pickles: [],
+  paidAddons: [],
+};
+
+const menuNodes = Array.from(document.querySelectorAll('#menu [data-item-id]'));
+const itemsById = new Map();
+const menuItemPricing = new Map();
+
+const cartPanel = document.getElementById('cartPanel');
+const cartItemsElement = document.getElementById('cartItems');
+const cartEmptyElement = document.getElementById('cartEmpty');
+const cartTotalElement = document.getElementById('cartTotal');
+const cartTotalInline = document.getElementById('cartTotalInline');
+const clearCartButton = document.getElementById('clearCartBtn');
+const resetAllButton = document.getElementById('resetAllBtn');
+const sendOrderButton = document.getElementById('sendOrderBtn');
+let mobileCartButton = document.getElementById('mobileCartBtn');
+let mobileCartBadge = document.getElementById('mobileCartBadge');
+let mobileCartBackdrop = document.getElementById('mobileCartBackdrop');
+const mobileCartCloseButton = document.getElementById('mobileCartClose');
+
+const pickupSelect = document.getElementById('pickupTime');
+const pickupHint = document.getElementById('pickupHint');
+const customerNameInput = document.getElementById('customerName');
+const customerPhoneInput = document.getElementById('customerPhone');
+const customerNotesInput = document.getElementById('customerNotes');
+const orderFormElement = document.getElementById('orderForm');
+const formErrorElement = document.getElementById('formError');
+const lastOrderLink = document.getElementById('lastOrderLink');
+
+const backToTop = document.getElementById('backToTop');
+const toast = document.getElementById('toast');
+const copyPhone = document.getElementById('copyPhone');
+const supportChatButton = document.getElementById('supportChatBtn');
+const supportChatBadge = document.getElementById('supportChatBadge');
+const supportChatBackdrop = document.getElementById('supportChatBackdrop');
+const supportChatModal = document.getElementById('supportChatModal');
+const supportChatCloseBtn = document.getElementById('supportChatCloseBtn');
+const supportChatSubTitle = document.getElementById('supportChatSubTitle');
+const supportChatIntro = document.getElementById('supportChatIntro');
+const supportChatNameInput = document.getElementById('supportChatName');
+const supportChatPhoneInput = document.getElementById('supportChatPhone');
+const supportChatStartBtn = document.getElementById('supportChatStartBtn');
+const supportChatIntroError = document.getElementById('supportChatIntroError');
+const supportChatThread = document.getElementById('supportChatThread');
+const supportChatStatusChip = document.getElementById('supportChatStatusChip');
+const supportChatMetaText = document.getElementById('supportChatMetaText');
+const supportChatMessages = document.getElementById('supportChatMessages');
+const supportChatComposeForm = document.getElementById('supportChatComposeForm');
+const supportChatInput = document.getElementById('supportChatInput');
+const supportChatCharCount = document.getElementById('supportChatCharCount');
+const supportChatSendBtn = document.getElementById('supportChatSendBtn');
+const supportChatError = document.getElementById('supportChatError');
+
+const state = {
+  cartLines: [],
+  name: '',
+  phone: '',
+  notes: '',
+  pickup: '',
+  lastOptions: {},
+  lastDrinkType: {},
+};
+
+const ui = {
+  pickupStatus: { canCheckout: false, nextOpen: null, slots: [] },
+  lineEditor: {
+    modal: null,
+    content: null,
+    noteInput: null,
+    cancelButton: null,
+    saveButton: null,
+    editingLineId: null,
+  },
+  confirmModal: {
+    modal: null,
+    content: null,
+    backButton: null,
+    sendButton: null,
+  },
+  resetModal: {
+    modal: null,
+    cancelButton: null,
+    confirmButton: null,
+  },
+  drinkChangeModal: {
+    modal: null,
+    cancelButton: null,
+    confirmButton: null,
+    pending: null,
+  },
+  drinkSubmitModal: {
+    modal: null,
+    closeButton: null,
+    yesButton: null,
+    noButton: null,
+    backButton: null,
+    promptStep: null,
+    chooserStep: null,
+    optionsRoot: null,
+    resolver: null,
+    lastFocused: null,
+  },
+  cartReminderModal: {
+    modal: null,
+    continueButton: null,
+    goToCartButton: null,
+    lastFocused: null,
+  },
+};
+
+let customSelectGlobalBound = false;
+let nativeSelectGlobalBound = false;
+let nativeSelectIdCounter = 0;
+let toastTimeoutId = null;
+let mobileCartLockedScrollY = 0;
+let lastFocusedBeforeMobileCart = null;
+let supportChatLockedScrollY = 0;
+let supportChatLastFocused = null;
+let supportChatSendInFlight = false;
+let supportChatMarkReadInFlight = false;
+let unsubscribeSupportChatDoc = null;
+let unsubscribeSupportChatMessages = null;
+let orderSubmitIntentInFlight = false;
+let cartReminderTimerId = null;
+let cartReminderStartedAt = 0;
+let cartReminderPlannedFireAt = 0;
+let cartReminderShown = false;
+let cartReminderOrderSubmitted = false;
+let cartReminderPendingVisibility = false;
+let buildVersionMarker = null;
+const BUILD_VERSION = '20260228-16';
+const defaultToastMessage = toast?.textContent || '';
+const MOBILE_BREAKPOINT = 900;
+const mobileViewportQuery = window.matchMedia(
+  `(max-width: ${MOBILE_BREAKPOINT}px)`,
+);
+const mobileTouchQuery = window.matchMedia('(hover: none) and (pointer: coarse)');
+const supportChatState = {
+  chatId: '',
+  customerDeviceId: '',
+  customerName: '',
+  customerPhone: '',
+  status: 'open',
+  unreadForCustomer: 0,
+  messages: [],
+};
+
+function toShekel(value) {
+  return `\u20AA${value}`;
+}
+
+function isMobileViewport() {
+  return mobileViewportQuery.matches || mobileTouchQuery.matches;
+}
+
+function ensureMobileCartElements() {
+  if (!mobileCartButton) {
+    console.warn('[mobile cart] #mobileCartBtn missing, creating fallback');
+    mobileCartButton = document.createElement('button');
+    mobileCartButton.id = 'mobileCartBtn';
+    mobileCartButton.className = 'mobile-cart-btn';
+    mobileCartButton.type = 'button';
+    mobileCartButton.setAttribute('aria-label', 'עגלה');
+    mobileCartButton.innerHTML = `
+      <span class="mobile-cart-icon" aria-hidden="true">\u{1F6D2}</span>
+      <span id="mobileCartBadge" class="mobile-cart-badge" aria-hidden="true" hidden>0</span>
+    `;
+    document.body.append(mobileCartButton);
+  }
+
+  if (!mobileCartBadge) {
+    console.warn('[mobile cart] #mobileCartBadge missing, creating fallback');
+    mobileCartBadge = document.createElement('span');
+    mobileCartBadge.id = 'mobileCartBadge';
+    mobileCartBadge.className = 'mobile-cart-badge';
+    mobileCartBadge.setAttribute('aria-hidden', 'true');
+    mobileCartBadge.hidden = true;
+    mobileCartBadge.textContent = '0';
+    mobileCartButton.append(mobileCartBadge);
+  }
+
+  if (!mobileCartBackdrop) {
+    console.warn('[mobile cart] #mobileCartBackdrop missing, creating fallback');
+    mobileCartBackdrop = document.createElement('div');
+    mobileCartBackdrop.id = 'mobileCartBackdrop';
+    mobileCartBackdrop.className = 'mobile-cart-backdrop';
+    mobileCartBackdrop.hidden = true;
+    document.body.append(mobileCartBackdrop);
+  }
+
+  mobileCartButton.setAttribute('aria-controls', 'cartPanel');
+  mobileCartButton.setAttribute('aria-haspopup', 'dialog');
+  mobileCartButton.setAttribute('aria-expanded', 'false');
+}
+
+function lockBodyScrollForMobileCart() {
+  if (document.body.classList.contains('mobile-cart-open')) return;
+  mobileCartLockedScrollY = window.scrollY || window.pageYOffset || 0;
+  document.body.style.top = `-${mobileCartLockedScrollY}px`;
+  document.body.classList.add('mobile-cart-open');
+  document.documentElement.classList.add('modalOpen');
+  document.body.classList.add('modalOpen');
+}
+
+function unlockBodyScrollForMobileCart() {
+  const wasLocked = document.body.classList.contains('mobile-cart-open');
+  document.documentElement.classList.remove('modalOpen');
+  document.body.classList.remove('modalOpen');
+  if (!wasLocked) return;
+  document.body.classList.remove('mobile-cart-open');
+  document.body.style.top = '';
+  window.scrollTo(0, mobileCartLockedScrollY);
+}
+
+function closeMobileCart(options = {}) {
+  const { restoreFocus = true } = options;
+  cartPanel.classList.remove('open');
+  if (isMobileViewport()) {
+    cartPanel.setAttribute('aria-hidden', 'true');
+  }
+  mobileCartButton?.setAttribute('aria-expanded', 'false');
+  if (mobileCartBackdrop) {
+    mobileCartBackdrop.classList.remove('show');
+    mobileCartBackdrop.hidden = true;
+  }
+  unlockBodyScrollForMobileCart();
+  if (restoreFocus && isMobileViewport() && lastFocusedBeforeMobileCart) {
+    lastFocusedBeforeMobileCart.focus({ preventScroll: true });
+  }
+  lastFocusedBeforeMobileCart = null;
+}
+
+function openMobileCart() {
+  if (!isMobileViewport()) return;
+  lastFocusedBeforeMobileCart =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  cartPanel.classList.add('open');
+  cartPanel.setAttribute('aria-hidden', 'false');
+  cartPanel.setAttribute('role', 'dialog');
+  cartPanel.setAttribute('aria-modal', 'true');
+  mobileCartButton?.setAttribute('aria-expanded', 'true');
+  if (mobileCartBackdrop) {
+    mobileCartBackdrop.hidden = false;
+    mobileCartBackdrop.classList.add('show');
+  }
+  lockBodyScrollForMobileCart();
+  const scrollContainer = cartPanel.querySelector('.cartScroll');
+  if (scrollContainer instanceof HTMLElement) {
+    scrollContainer.scrollTop = 0;
+  }
+  cartPanel.focus({ preventScroll: true });
+  mobileCartCloseButton?.focus({ preventScroll: true });
+}
+
+function syncMobileCartLayout() {
+  if (mobileCartButton) {
+    mobileCartButton.style.display = isMobileViewport() ? 'flex' : 'none';
+  }
+
+  if (isMobileViewport()) {
+    const isOpen = cartPanel.classList.contains('open');
+    cartPanel.setAttribute(
+      'aria-hidden',
+      isOpen ? 'false' : 'true',
+    );
+    cartPanel.setAttribute('role', 'dialog');
+    cartPanel.setAttribute('aria-modal', 'true');
+    mobileCartButton?.setAttribute(
+      'aria-expanded',
+      isOpen ? 'true' : 'false',
+    );
+    if (!isOpen) {
+      unlockBodyScrollForMobileCart();
+    }
+    return;
+  }
+
+  closeMobileCart({ restoreFocus: false });
+  cartPanel.removeAttribute('aria-hidden');
+  cartPanel.removeAttribute('role');
+  cartPanel.removeAttribute('aria-modal');
+  mobileCartButton?.setAttribute('aria-expanded', 'false');
+  if (mobileCartBackdrop) {
+    mobileCartBackdrop.classList.remove('show');
+    mobileCartBackdrop.hidden = true;
+  }
+}
+
+function ensureBuildVersionMarker() {
+  if (buildVersionMarker) return buildVersionMarker;
+
+  const marker = document.createElement('div');
+  marker.id = 'buildVersionMarker';
+  marker.setAttribute('aria-hidden', 'true');
+  marker.textContent = `v: ${BUILD_VERSION}`;
+  Object.assign(marker.style, {
+    position: 'fixed',
+    left: '0.45rem',
+    bottom: 'calc(0.35rem + env(safe-area-inset-bottom))',
+    padding: '0.12rem 0.35rem',
+    borderRadius: '6px',
+    background: 'rgba(43, 32, 24, 0.65)',
+    color: '#fff',
+    fontSize: '10px',
+    lineHeight: '1.2',
+    letterSpacing: '0.01em',
+    fontFamily: 'monospace',
+    zIndex: '69',
+    pointerEvents: 'none',
+  });
+  marker.hidden = true;
+  document.body.append(marker);
+  buildVersionMarker = marker;
+  return marker;
+}
+
+function syncBuildVersionMarker() {
+  const marker = ensureBuildVersionMarker();
+  marker.hidden = !isMobileViewport();
+}
+
+function syncViewportUi() {
+  syncMobileCartLayout();
+  syncBuildVersionMarker();
+}
+
+function showToast(message, timeoutMs = 2000) {
+  if (!toast) return;
+  if (toastTimeoutId) {
+    clearTimeout(toastTimeoutId);
+    toastTimeoutId = null;
+  }
+
+  toast.textContent = message;
+  toast.classList.add('show');
+
+  toastTimeoutId = setTimeout(() => {
+    toast.classList.remove('show');
+    toast.textContent = defaultToastMessage;
+    toastTimeoutId = null;
+  }, timeoutMs);
+}
+
+function readSupportChatStorage() {
+  try {
+    const raw = localStorage.getItem(SUPPORT_CHAT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch (error) {
+    console.error('Failed to read support chat storage', error);
+    return null;
+  }
+}
+
+function persistSupportChatStorage() {
+  try {
+    localStorage.setItem(
+      SUPPORT_CHAT_STORAGE_KEY,
+      JSON.stringify({
+        chatId: supportChatState.chatId,
+        customerDeviceId: supportChatState.customerDeviceId,
+        customerName: supportChatState.customerName,
+        customerPhone: supportChatState.customerPhone,
+      }),
+    );
+  } catch (error) {
+    console.error('Failed to persist support chat storage', error);
+  }
+}
+
+function clearSupportChatStorage() {
+  try {
+    localStorage.removeItem(SUPPORT_CHAT_STORAGE_KEY);
+  } catch (error) {
+    console.error('Failed to clear support chat storage', error);
+  }
+}
+
+function createSupportChatDeviceId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `dev-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function ensureSupportChatDeviceId() {
+  if (supportChatState.customerDeviceId) return supportChatState.customerDeviceId;
+  try {
+    const existing = localStorage.getItem(SUPPORT_CHAT_DEVICE_KEY);
+    if (existing) {
+      supportChatState.customerDeviceId = existing;
+      return existing;
+    }
+  } catch (error) {
+    console.error('Failed to read support chat device id', error);
+  }
+
+  const nextDeviceId = createSupportChatDeviceId();
+  supportChatState.customerDeviceId = nextDeviceId;
+  try {
+    localStorage.setItem(SUPPORT_CHAT_DEVICE_KEY, nextDeviceId);
+  } catch (error) {
+    console.error('Failed to persist support chat device id', error);
+  }
+  return nextDeviceId;
+}
+
+function hydrateSupportChatStateFromStorage() {
+  const parsed = readSupportChatStorage();
+  if (!parsed) return;
+  supportChatState.chatId = typeof parsed.chatId === 'string' ? parsed.chatId : '';
+  supportChatState.customerDeviceId =
+    typeof parsed.customerDeviceId === 'string' ? parsed.customerDeviceId : '';
+  supportChatState.customerName =
+    typeof parsed.customerName === 'string' ? parsed.customerName : '';
+  supportChatState.customerPhone =
+    typeof parsed.customerPhone === 'string' ? parsed.customerPhone : '';
+}
+
+function formatSupportChatTimestamp(value) {
+  if (!value) return '--';
+  const date = value?.toDate ? value.toDate() : new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+  return date.toLocaleString('he-IL', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+  });
+}
+
+function setSupportChatUnreadBadge(count) {
+  if (!supportChatBadge) return;
+  const unreadCount = Math.max(0, Number(count) || 0);
+  supportChatBadge.hidden = unreadCount <= 0;
+  supportChatBadge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+}
+
+function stopSupportChatListeners() {
+  if (typeof unsubscribeSupportChatDoc === 'function') unsubscribeSupportChatDoc();
+  if (typeof unsubscribeSupportChatMessages === 'function') unsubscribeSupportChatMessages();
+  unsubscribeSupportChatDoc = null;
+  unsubscribeSupportChatMessages = null;
+}
+
+function lockBodyScrollForSupportChat() {
+  if (document.body.classList.contains('support-chat-open')) return;
+  supportChatLockedScrollY = window.scrollY || window.pageYOffset || 0;
+  document.body.style.top = `-${supportChatLockedScrollY}px`;
+  document.body.classList.add('support-chat-open');
+}
+
+function unlockBodyScrollForSupportChat() {
+  if (!document.body.classList.contains('support-chat-open')) return;
+  document.body.classList.remove('support-chat-open');
+  document.body.style.top = '';
+  window.scrollTo(0, supportChatLockedScrollY);
+}
+
+function isSupportChatOpen() {
+  return !!supportChatModal && !supportChatModal.hidden && supportChatModal.classList.contains('show');
+}
+
+function closeSupportChatModal({ restoreFocus = true } = {}) {
+  if (!supportChatModal || !supportChatBackdrop) return;
+  supportChatModal.classList.remove('show');
+  supportChatBackdrop.classList.remove('show');
+  supportChatModal.hidden = true;
+  supportChatBackdrop.hidden = true;
+  unlockBodyScrollForSupportChat();
+  if (restoreFocus && supportChatLastFocused) {
+    supportChatLastFocused.focus({ preventScroll: true });
+  }
+  supportChatLastFocused = null;
+}
+
+function openSupportChatModal() {
+  if (!supportChatModal || !supportChatBackdrop) return;
+  supportChatLastFocused =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  supportChatModal.hidden = false;
+  supportChatBackdrop.hidden = false;
+  requestAnimationFrame(() => {
+    supportChatModal.classList.add('show');
+    supportChatBackdrop.classList.add('show');
+  });
+  lockBodyScrollForSupportChat();
+
+  if (supportChatState.chatId) {
+    if (supportChatThread) supportChatThread.hidden = false;
+    if (supportChatIntro) supportChatIntro.hidden = true;
+    supportChatInput?.focus({ preventScroll: true });
+    markSupportMessagesReadByCustomer();
+  } else {
+    if (supportChatIntro) supportChatIntro.hidden = false;
+    if (supportChatThread) supportChatThread.hidden = true;
+    supportChatNameInput?.focus({ preventScroll: true });
+  }
+}
+
+function setSupportChatError(message = '') {
+  if (!supportChatError) return;
+  supportChatError.textContent = message;
+}
+
+function setSupportChatIntroError(message = '') {
+  if (!supportChatIntroError) return;
+  supportChatIntroError.textContent = message;
+}
+
+function syncSupportChatStatus(status) {
+  if (!supportChatStatusChip) return;
+  const isClosed = status === 'closed';
+  supportChatStatusChip.classList.toggle('closed', isClosed);
+  supportChatStatusChip.classList.toggle('open', !isClosed);
+  supportChatStatusChip.textContent = isClosed ? 'סגור' : 'פתוח';
+  if (supportChatInput) supportChatInput.disabled = isClosed;
+  if (supportChatSendBtn) supportChatSendBtn.disabled = isClosed || supportChatSendInFlight;
+  if (supportChatSubTitle) {
+    supportChatSubTitle.textContent = isClosed
+      ? 'הצ׳אט סגור. אפשר לפתוח שיחה חדשה דרך הטלפון.'
+      : 'מענה חי בזמן אמת';
+  }
+}
+
+function syncSupportChatMeta(chatData = {}) {
+  if (!supportChatMetaText) return;
+  const updatedAtText = formatSupportChatTimestamp(chatData.updatedAt);
+  const shortId = supportChatState.chatId ? supportChatState.chatId.slice(0, 8) : '';
+  supportChatMetaText.textContent = shortId
+    ? `צ׳אט #${shortId} | עודכן: ${updatedAtText}`
+    : '';
+}
+
+function normalizeSupportMessageDoc(messageDoc) {
+  const data = messageDoc.data() || {};
+  const text = typeof data.text === 'string' ? data.text.trim() : '';
+  if (!text) return null;
+  const sender = data.sender === 'admin' ? 'admin' : 'customer';
+  return {
+    id: messageDoc.id,
+    ref: messageDoc.ref,
+    text,
+    sender,
+    createdAt: data.createdAt || null,
+    readByAdminAt: data.readByAdminAt || null,
+    readByCustomerAt: data.readByCustomerAt || null,
+  };
+}
+
+function renderSupportChatMessages(messages = supportChatState.messages) {
+  if (!supportChatMessages) return;
+  supportChatMessages.innerHTML = '';
+
+  if (!Array.isArray(messages) || messages.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'support-chat-empty';
+    empty.textContent = 'אין עדיין הודעות. אפשר לשלוח הודעה חדשה.';
+    supportChatMessages.append(empty);
+    return;
+  }
+
+  messages.forEach((message) => {
+    const row = document.createElement('div');
+    row.className = `support-chat-message-row ${message.sender}`;
+    row.innerHTML = `
+      <article class="support-chat-bubble">
+        <p>${escapeHtml(message.text)}</p>
+        <div class="support-chat-bubble-meta">
+          <span>${message.sender === 'admin' ? 'שירות' : 'אתם'}</span>
+          <span>${escapeHtml(formatSupportChatTimestamp(message.createdAt))}</span>
+        </div>
+      </article>
+    `;
+    supportChatMessages.append(row);
+  });
+
+  supportChatMessages.scrollTop = supportChatMessages.scrollHeight;
+}
+
+function updateSupportChatCharCounter() {
+  if (!supportChatInput || !supportChatCharCount) return;
+  const remaining = SUPPORT_CHAT_MAX_CHARS - supportChatInput.value.length;
+  supportChatCharCount.textContent = `נותרו ${remaining} תווים`;
+  supportChatCharCount.classList.toggle('is-limit', remaining <= 30);
+}
+
+async function markSupportMessagesReadByCustomer() {
+  if (supportChatMarkReadInFlight) return;
+  if (!supportChatState.chatId || !db) return;
+
+  const unreadRefs = supportChatState.messages
+    .filter((message) => message.sender === 'admin' && !message.readByCustomerAt && message.ref)
+    .map((message) => message.ref);
+
+  if (unreadRefs.length === 0 && (Number(supportChatState.unreadForCustomer) || 0) <= 0) return;
+
+  supportChatMarkReadInFlight = true;
+  try {
+    const batch = writeBatch(db);
+    unreadRefs.forEach((messageRef) => {
+      batch.update(messageRef, { readByCustomerAt: serverTimestamp() });
+    });
+    batch.update(doc(db, 'chats', supportChatState.chatId), {
+      unreadForCustomer: 0,
+    });
+    await batch.commit();
+    supportChatState.unreadForCustomer = 0;
+    setSupportChatUnreadBadge(0);
+  } catch (error) {
+    console.error('Failed to mark support messages as read for customer', error);
+  } finally {
+    supportChatMarkReadInFlight = false;
+  }
+}
+
+function listenSupportChatDocument() {
+  if (!supportChatState.chatId || !db) return;
+  unsubscribeSupportChatDoc = onSnapshot(
+    doc(db, 'chats', supportChatState.chatId),
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        stopSupportChatListeners();
+        supportChatState.chatId = '';
+        supportChatState.status = 'open';
+        supportChatState.messages = [];
+        supportChatState.unreadForCustomer = 0;
+        clearSupportChatStorage();
+        setSupportChatUnreadBadge(0);
+        if (supportChatThread) supportChatThread.hidden = true;
+        if (supportChatIntro) supportChatIntro.hidden = false;
+        setSupportChatIntroError('השיחה הקודמת אינה זמינה יותר. אפשר לפתוח שיחה חדשה.');
+        return;
+      }
+
+      const chatData = snapshot.data() || {};
+      supportChatState.status = chatData.status === 'closed' ? 'closed' : 'open';
+      supportChatState.unreadForCustomer = Number(chatData.unreadForCustomer) || 0;
+      supportChatState.customerName = typeof chatData.customerName === 'string'
+        ? chatData.customerName
+        : supportChatState.customerName;
+      supportChatState.customerPhone = typeof chatData.customerPhone === 'string'
+        ? chatData.customerPhone
+        : supportChatState.customerPhone;
+      persistSupportChatStorage();
+      syncSupportChatStatus(supportChatState.status);
+      syncSupportChatMeta(chatData);
+      setSupportChatUnreadBadge(supportChatState.unreadForCustomer);
+
+      if (isSupportChatOpen() && supportChatState.unreadForCustomer > 0) {
+        markSupportMessagesReadByCustomer();
+      }
+    },
+    (error) => {
+      console.error('Failed to listen to support chat doc', error);
+      setSupportChatError('שגיאה בעדכון מצב הצ׳אט.');
+    },
+  );
+}
+
+function listenSupportChatMessages() {
+  if (!supportChatState.chatId || !db) return;
+  const messagesQuery = query(
+    collection(db, 'chats', supportChatState.chatId, 'messages'),
+    orderBy('createdAt', 'asc'),
+    limit(300),
+  );
+
+  unsubscribeSupportChatMessages = onSnapshot(
+    messagesQuery,
+    (snapshot) => {
+      supportChatState.messages = snapshot.docs
+        .map((messageDoc) => normalizeSupportMessageDoc(messageDoc))
+        .filter(Boolean);
+      renderSupportChatMessages();
+      if (isSupportChatOpen()) {
+        markSupportMessagesReadByCustomer();
+      }
+    },
+    (error) => {
+      console.error('Failed to listen to support chat messages', error);
+      setSupportChatError('שגיאה בטעינת הודעות הצ׳אט.');
+    },
+  );
+}
+
+function startSupportChatRealtime() {
+  stopSupportChatListeners();
+  if (!supportChatState.chatId || !db) return;
+  if (supportChatThread) supportChatThread.hidden = false;
+  if (supportChatIntro) supportChatIntro.hidden = true;
+  listenSupportChatDocument();
+  listenSupportChatMessages();
+}
+
+async function ensureStoredSupportChatIsValid() {
+  hydrateSupportChatStateFromStorage();
+  ensureSupportChatDeviceId();
+  setSupportChatUnreadBadge(0);
+  if (!supportChatState.chatId || !db) return;
+
+  try {
+    const snapshot = await getDoc(doc(db, 'chats', supportChatState.chatId));
+    if (!snapshot.exists()) {
+      supportChatState.chatId = '';
+      supportChatState.messages = [];
+      clearSupportChatStorage();
+      return;
+    }
+    const chatData = snapshot.data() || {};
+    const chatDeviceId = typeof chatData.customerDeviceId === 'string'
+      ? chatData.customerDeviceId
+      : '';
+    if (chatDeviceId && chatDeviceId !== supportChatState.customerDeviceId) {
+      supportChatState.chatId = '';
+      supportChatState.messages = [];
+      clearSupportChatStorage();
+      return;
+    }
+    supportChatState.status = chatData.status === 'closed' ? 'closed' : 'open';
+    supportChatState.unreadForCustomer = Number(chatData.unreadForCustomer) || 0;
+    supportChatState.customerName = typeof chatData.customerName === 'string'
+      ? chatData.customerName
+      : supportChatState.customerName;
+    supportChatState.customerPhone = typeof chatData.customerPhone === 'string'
+      ? chatData.customerPhone
+      : supportChatState.customerPhone;
+    persistSupportChatStorage();
+    setSupportChatUnreadBadge(supportChatState.unreadForCustomer);
+  } catch (error) {
+    console.error('Failed to restore support chat', error);
+    showToast('לא הצלחנו לטעון את שירות הלקוחות כרגע', 2600);
+  }
+}
+
+async function createSupportChat({ customerName, customerPhone }) {
+  if (!db) throw new Error('FIREBASE_UNAVAILABLE');
+  const deviceId = ensureSupportChatDeviceId();
+  const chatsCollection = collection(db, 'chats');
+  const chatRef = doc(chatsCollection);
+
+  await setDoc(chatRef, {
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    status: 'open',
+    customerName,
+    customerPhone,
+    customerDeviceId: deviceId,
+    lastMessage: '',
+    unreadForAdmin: 0,
+    unreadForCustomer: 0,
+  });
+
+  supportChatState.chatId = chatRef.id;
+  supportChatState.customerName = customerName;
+  supportChatState.customerPhone = customerPhone;
+  supportChatState.status = 'open';
+  supportChatState.unreadForCustomer = 0;
+  supportChatState.messages = [];
+  persistSupportChatStorage();
+  return chatRef.id;
+}
+
+async function handleSupportChatStart() {
+  setSupportChatIntroError('');
+  if (!db) {
+    setSupportChatIntroError('שירות הלקוחות לא זמין כרגע. נסו שוב מאוחר יותר.');
+    return;
+  }
+
+  const customerName = String(supportChatNameInput?.value || '').trim();
+  const customerPhone = String(supportChatPhoneInput?.value || '').trim();
+  if (!customerName) {
+    setSupportChatIntroError('יש להזין שם.');
+    return;
+  }
+  if (!isValidIsraeliPhone(customerPhone)) {
+    setSupportChatIntroError('יש להזין מספר טלפון ישראלי תקין.');
+    return;
+  }
+
+  if (!supportChatStartBtn) return;
+  supportChatStartBtn.disabled = true;
+  try {
+    if (!supportChatState.chatId) {
+      await createSupportChat({ customerName, customerPhone });
+    }
+    if (supportChatThread) supportChatThread.hidden = false;
+    if (supportChatIntro) supportChatIntro.hidden = true;
+    syncSupportChatStatus('open');
+    startSupportChatRealtime();
+    setSupportChatError('');
+    supportChatInput?.focus({ preventScroll: true });
+  } catch (error) {
+    console.error('Failed to create support chat', error);
+    setSupportChatIntroError('פתיחת הצ׳אט נכשלה. נסו שוב.');
+  } finally {
+    supportChatStartBtn.disabled = false;
+  }
+}
+
+async function sendSupportChatMessage() {
+  if (supportChatSendInFlight) return;
+  if (!supportChatState.chatId || !db) {
+    setSupportChatError('שירות הלקוחות לא זמין כרגע.');
+    return;
+  }
+
+  const text = String(supportChatInput?.value || '').trim();
+  if (!text) {
+    setSupportChatError('יש להזין הודעה לפני שליחה.');
+    return;
+  }
+  if (text.length > SUPPORT_CHAT_MAX_CHARS) {
+    setSupportChatError(`מקסימום ${SUPPORT_CHAT_MAX_CHARS} תווים.`);
+    return;
+  }
+  if (supportChatState.status === 'closed') {
+    setSupportChatError('הצ׳אט סגור להודעות חדשות.');
+    return;
+  }
+
+  supportChatSendInFlight = true;
+  if (supportChatSendBtn) supportChatSendBtn.disabled = true;
+  setSupportChatError('');
+  try {
+    await addDoc(collection(db, 'chats', supportChatState.chatId, 'messages'), {
+      createdAt: serverTimestamp(),
+      sender: 'customer',
+      text,
+      delivered: true,
+      customerDeviceId: supportChatState.customerDeviceId,
+      readByAdminAt: null,
+      readByCustomerAt: serverTimestamp(),
+    });
+    await updateDoc(doc(db, 'chats', supportChatState.chatId), {
+      updatedAt: serverTimestamp(),
+      status: 'open',
+      lastMessage: text.slice(0, 180),
+      unreadForAdmin: increment(1),
+    });
+    if (supportChatInput) {
+      supportChatInput.value = '';
+      updateSupportChatCharCounter();
+    }
+  } catch (error) {
+    console.error('Failed to send support chat message', error);
+    setSupportChatError('שליחה נכשלה, נסו שוב');
+  } finally {
+    supportChatSendInFlight = false;
+    syncSupportChatStatus(supportChatState.status);
+  }
+}
+
+function bindSupportChatUiEvents() {
+  if (!supportChatButton || !supportChatModal || !supportChatBackdrop) return;
+
+  supportChatButton.addEventListener('click', () => {
+    setSupportChatError('');
+    setSupportChatIntroError('');
+    if (cartPanel.classList.contains('open')) {
+      closeMobileCart({ restoreFocus: false });
+    }
+    if (!supportChatState.chatId) {
+      if (supportChatNameInput && !supportChatNameInput.value) {
+        supportChatNameInput.value = state.name || customerNameInput?.value || '';
+      }
+      if (supportChatPhoneInput && !supportChatPhoneInput.value) {
+        supportChatPhoneInput.value = state.phone || customerPhoneInput?.value || '';
+      }
+    }
+    openSupportChatModal();
+  });
+
+  supportChatCloseBtn?.addEventListener('click', () => closeSupportChatModal());
+  supportChatBackdrop.addEventListener('click', () => closeSupportChatModal());
+
+  supportChatStartBtn?.addEventListener('click', () => {
+    handleSupportChatStart();
+  });
+
+  supportChatComposeForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    sendSupportChatMessage();
+  });
+
+  supportChatInput?.addEventListener('input', () => {
+    if (supportChatInput.value.length > SUPPORT_CHAT_MAX_CHARS) {
+      supportChatInput.value = supportChatInput.value.slice(0, SUPPORT_CHAT_MAX_CHARS);
+    }
+    setSupportChatError('');
+    updateSupportChatCharCounter();
+  });
+
+  supportChatMessages?.addEventListener('click', () => {
+    markSupportMessagesReadByCustomer();
+  });
+  supportChatModal.addEventListener('focusin', () => {
+    markSupportMessagesReadByCustomer();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && isSupportChatOpen()) {
+      markSupportMessagesReadByCustomer();
+    }
+  });
+}
+
+async function bootstrapSupportChat() {
+  if (!supportChatButton) return;
+
+  if (!db) {
+    supportChatButton.disabled = true;
+    supportChatButton.title = 'שירות הלקוחות לא זמין כרגע';
+    return;
+  }
+
+  ensureSupportChatDeviceId();
+  updateSupportChatCharCounter();
+  await ensureStoredSupportChatIsValid();
+  if (supportChatNameInput && !supportChatNameInput.value) {
+    supportChatNameInput.value = supportChatState.customerName || state.name || '';
+  }
+  if (supportChatPhoneInput && !supportChatPhoneInput.value) {
+    supportChatPhoneInput.value = supportChatState.customerPhone || state.phone || '';
+  }
+  syncSupportChatStatus(supportChatState.status);
+  syncSupportChatMeta();
+  setSupportChatUnreadBadge(supportChatState.unreadForCustomer);
+  if (supportChatState.chatId) {
+    startSupportChatRealtime();
+  }
+}
+
+function devLog(message, details = null) {
+  if (!IS_DEV) return;
+  if (details) {
+    console.log(`[drink submit] ${message}`, details);
+    return;
+  }
+  console.log(`[drink submit] ${message}`);
+}
+
+function readSessionBool(key) {
+  try {
+    return sessionStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeSessionBool(key, value) {
+  try {
+    sessionStorage.setItem(key, value ? '1' : '0');
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function readSessionNumber(key) {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return 0;
+    const numericValue = Number(raw);
+    return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeSessionNumber(key, value) {
+  try {
+    if (!Number.isFinite(value) || value <= 0) {
+      sessionStorage.removeItem(key);
+      return;
+    }
+    sessionStorage.setItem(key, String(Math.floor(value)));
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function randomCartReminderDelayMs() {
+  const range = CART_REMINDER_MAX_DELAY_MS - CART_REMINDER_MIN_DELAY_MS;
+  return CART_REMINDER_MIN_DELAY_MS + Math.floor(Math.random() * (range + 1));
+}
+
+function getCurrentCartQuantity() {
+  return getCartItemCount(buildCartEntries());
+}
+
+function clearCartReminderTimer() {
+  if (cartReminderTimerId !== null) {
+    window.clearTimeout(cartReminderTimerId);
+    cartReminderTimerId = null;
+  }
+}
+
+function isCartReminderModalOpen() {
+  return !!ui.cartReminderModal.modal
+    && !ui.cartReminderModal.modal.hidden
+    && ui.cartReminderModal.modal.classList.contains('show');
+}
+
+function closeCartReminderModal({ restoreFocus = true } = {}) {
+  const modalState = ui.cartReminderModal;
+  if (!modalState.modal) return;
+  closeModal(modalState.modal);
+  if (restoreFocus && modalState.lastFocused instanceof HTMLElement) {
+    modalState.lastFocused.focus({ preventScroll: true });
+  }
+  modalState.lastFocused = null;
+}
+
+function openCartFromReminder() {
+  closeCartReminderModal({ restoreFocus: false });
+  if (isMobileViewport()) {
+    openMobileCart();
+    return;
+  }
+  cartPanel?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  if (cartPanel instanceof HTMLElement) {
+    cartPanel.focus({ preventScroll: true });
+  }
+}
+
+function showCartReminderModal() {
+  if (cartReminderShown || cartReminderOrderSubmitted) return;
+  if (getCurrentCartQuantity() <= 0) return;
+  if (document.visibilityState !== 'visible') {
+    cartReminderPendingVisibility = true;
+    return;
+  }
+
+  const modalState = ui.cartReminderModal;
+  if (!modalState.modal) return;
+
+  cartReminderShown = true;
+  cartReminderPendingVisibility = false;
+  writeSessionBool(CART_REMINDER_SESSION_KEYS.reminderShown, true);
+  clearCartReminderTimer();
+
+  modalState.lastFocused =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  openModal(modalState.modal);
+  modalState.continueButton?.focus({ preventScroll: true });
+}
+
+function onCartReminderTimerReached() {
+  cartReminderTimerId = null;
+  if (cartReminderShown || cartReminderOrderSubmitted) return;
+  if (getCurrentCartQuantity() <= 0) {
+    cancelCartReminderIfNeeded(0);
+    return;
+  }
+  if (document.visibilityState !== 'visible') {
+    cartReminderPendingVisibility = true;
+    return;
+  }
+  showCartReminderModal();
+}
+
+function scheduleCartReminderTimer(plannedFireAt) {
+  clearCartReminderTimer();
+  const delayMs = Math.max(0, plannedFireAt - Date.now());
+  cartReminderTimerId = window.setTimeout(onCartReminderTimerReached, delayMs);
+}
+
+function scheduleCartReminderIfNeeded(totalQty) {
+  if (totalQty <= 0) return;
+  if (cartReminderShown || cartReminderOrderSubmitted) return;
+
+  const now = Date.now();
+  if (cartReminderPlannedFireAt <= 0) {
+    cartReminderStartedAt = now;
+    cartReminderPlannedFireAt = now + randomCartReminderDelayMs();
+    writeSessionNumber(CART_REMINDER_SESSION_KEYS.timerStartedAt, cartReminderStartedAt);
+    writeSessionNumber(CART_REMINDER_SESSION_KEYS.plannedFireAt, cartReminderPlannedFireAt);
+  }
+
+  if (now >= cartReminderPlannedFireAt) {
+    onCartReminderTimerReached();
+    return;
+  }
+
+  if (cartReminderTimerId === null) {
+    scheduleCartReminderTimer(cartReminderPlannedFireAt);
+  }
+}
+
+function cancelCartReminderIfNeeded(totalQty) {
+  if (totalQty > 0) return;
+  clearCartReminderTimer();
+  cartReminderPendingVisibility = false;
+  cartReminderStartedAt = 0;
+  cartReminderPlannedFireAt = 0;
+  writeSessionNumber(CART_REMINDER_SESSION_KEYS.timerStartedAt, 0);
+  writeSessionNumber(CART_REMINDER_SESSION_KEYS.plannedFireAt, 0);
+  if (isCartReminderModalOpen()) {
+    closeCartReminderModal({ restoreFocus: false });
+  }
+}
+
+function markCartReminderOrderSubmitted() {
+  cartReminderOrderSubmitted = true;
+  writeSessionBool(CART_REMINDER_SESSION_KEYS.orderSubmitted, true);
+  clearCartReminderTimer();
+  cartReminderPendingVisibility = false;
+  cartReminderStartedAt = 0;
+  cartReminderPlannedFireAt = 0;
+  writeSessionNumber(CART_REMINDER_SESSION_KEYS.timerStartedAt, 0);
+  writeSessionNumber(CART_REMINDER_SESSION_KEYS.plannedFireAt, 0);
+  if (isCartReminderModalOpen()) {
+    closeCartReminderModal({ restoreFocus: false });
+  }
+}
+
+function syncCartReminderForQuantity(totalQty) {
+  if (totalQty > 0) {
+    scheduleCartReminderIfNeeded(totalQty);
+    return;
+  }
+  cancelCartReminderIfNeeded(totalQty);
+}
+
+function initCartReminder() {
+  cartReminderShown = readSessionBool(CART_REMINDER_SESSION_KEYS.reminderShown);
+  cartReminderOrderSubmitted = readSessionBool(CART_REMINDER_SESSION_KEYS.orderSubmitted);
+  cartReminderStartedAt = readSessionNumber(CART_REMINDER_SESSION_KEYS.timerStartedAt);
+  cartReminderPlannedFireAt = readSessionNumber(CART_REMINDER_SESSION_KEYS.plannedFireAt);
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    if (cartReminderShown || cartReminderOrderSubmitted) return;
+    if (getCurrentCartQuantity() <= 0) return;
+
+    if (cartReminderPendingVisibility) {
+      showCartReminderModal();
+      return;
+    }
+
+    if (cartReminderPlannedFireAt > 0) {
+      if (Date.now() >= cartReminderPlannedFireAt) {
+        showCartReminderModal();
+        return;
+      }
+      if (cartReminderTimerId === null) {
+        scheduleCartReminderTimer(cartReminderPlannedFireAt);
+      }
+    }
+  });
+
+  if (cartReminderOrderSubmitted) {
+    markCartReminderOrderSubmitted();
+    return;
+  }
+
+  const initialQty = getCurrentCartQuantity();
+  if (initialQty <= 0) {
+    cancelCartReminderIfNeeded(0);
+    return;
+  }
+
+  if (!cartReminderShown && cartReminderPlannedFireAt > 0 && Date.now() >= cartReminderPlannedFireAt) {
+    if (document.visibilityState === 'visible') {
+      showCartReminderModal();
+    } else {
+      cartReminderPendingVisibility = true;
+    }
+    return;
+  }
+
+  syncCartReminderForQuantity(initialQty);
+}
+
+function normalizeDrinkCandidate(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+function resolvePreSubmitDrinkChoices() {
+  const picked = [];
+  const usedValues = new Set();
+
+  PRE_SUBMIT_DRINK_CHOICES.forEach((preset) => {
+    const match = DRINK_TYPE_OPTIONS.find((option) => {
+      if (!option || usedValues.has(option)) return false;
+      const optionNormalized = normalizeDrinkCandidate(option);
+      return preset.candidates.some((candidate) => {
+        const candidateNormalized = normalizeDrinkCandidate(candidate);
+        return (
+          optionNormalized === candidateNormalized
+          || optionNormalized.includes(candidateNormalized)
+          || candidateNormalized.includes(optionNormalized)
+        );
+      });
+    });
+    if (!match) return;
+    usedValues.add(match);
+    picked.push({ label: preset.label, value: match });
+  });
+
+  return picked;
+}
+
+function hasDrinkInCart(lines = state.cartLines) {
+  return Array.isArray(lines) && lines.some((line) => isDrinkItem(line));
+}
+
+function addDrinkFromPreSubmitPrompt(drinkType) {
+  const safeDrinkType = sanitizeDrinkType(drinkType);
+  if (!safeDrinkType) return false;
+  if (hasDrinkInCart()) return true;
+
+  const itemId = DRINK_UPSELL_ITEM_ID;
+  const drinkMenuSelect = menuNodeById(itemId)?.querySelector('.drink-type-select');
+  if (drinkMenuSelect) {
+    drinkMenuSelect.value = safeDrinkType;
+    syncStyledSelect(drinkMenuSelect);
+    clearDrinkError(itemId);
+  }
+  state.lastDrinkType[itemId] = safeDrinkType;
+
+  if (drinkMenuSelect) {
+    addItemFromMenu(itemId);
+    return true;
+  }
+
+  const item = itemsById.get(itemId);
+  if (!item) return false;
+
+  const existing = findMatchingEditableLine(itemId, null, safeDrinkType);
+  const displayName = `${item.name} — ${safeDrinkType}`;
+  if (existing) {
+    existing.quantity += 1;
+  } else {
+    state.cartLines.push({
+      lineId: createLineId(),
+      itemId: item.id,
+      name: displayName,
+      baseName: item.name,
+      displayName,
+      category: DRINK_CATEGORY_LABEL,
+      drinkType: safeDrinkType,
+      basePrice: item.price,
+      quantity: 1,
+      options: null,
+      note: '',
+      isDrink: true,
+      type: 'drink',
+    });
+  }
+  saveState();
+  renderCart();
+  return true;
+}
+
+function isDrinkSubmitModalOpen() {
+  return !!ui.drinkSubmitModal.modal
+    && !ui.drinkSubmitModal.modal.hidden
+    && ui.drinkSubmitModal.modal.classList.contains('show');
+}
+
+function closeDrinkSubmitModal({ restoreFocus = true } = {}) {
+  const modalState = ui.drinkSubmitModal;
+  if (!modalState.modal) return;
+  closeModal(modalState.modal);
+  if (restoreFocus && modalState.lastFocused instanceof HTMLElement) {
+    modalState.lastFocused.focus({ preventScroll: true });
+  }
+  modalState.lastFocused = null;
+}
+
+function getFocusableModalElements(root) {
+  if (!root) return [];
+  return Array.from(
+    root.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter(
+    (node) => !node.hasAttribute('hidden')
+      && !node.getAttribute('aria-hidden')
+      && node.getClientRects().length > 0,
+  );
+}
+
+function showDrinkSubmitPromptStep() {
+  const modalState = ui.drinkSubmitModal;
+  if (!modalState.promptStep || !modalState.chooserStep) return;
+  modalState.promptStep.hidden = false;
+  modalState.chooserStep.hidden = true;
+}
+
+function showDrinkSubmitChooserStep() {
+  const modalState = ui.drinkSubmitModal;
+  if (!modalState.promptStep || !modalState.chooserStep) return;
+  modalState.promptStep.hidden = true;
+  modalState.chooserStep.hidden = false;
+}
+
+function resolveDrinkSubmitDecision(decision) {
+  const modalState = ui.drinkSubmitModal;
+  const resolver = modalState.resolver;
+  modalState.resolver = null;
+  closeDrinkSubmitModal();
+  if (typeof resolver === 'function') resolver(decision);
+}
+
+function handleDrinkSubmitSkip() {
+  resolveDrinkSubmitDecision({ action: 'skip' });
+}
+
+function handleDrinkSubmitAddDecision(drinkType) {
+  resolveDrinkSubmitDecision({ action: 'add', drinkType });
+}
+
+function handleDrinkSubmitModalKeydown(event) {
+  if (!isDrinkSubmitModalOpen()) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    handleDrinkSubmitSkip();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+
+  const modalState = ui.drinkSubmitModal;
+  const focusable = getFocusableModalElements(modalState.modal);
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus({ preventScroll: true });
+    return;
+  }
+  if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus({ preventScroll: true });
+  }
+}
+
+function openDrinkSubmitModal() {
+  const modalState = ui.drinkSubmitModal;
+  if (!modalState.modal) return Promise.resolve({ action: 'skip' });
+
+  modalState.lastFocused =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  showDrinkSubmitPromptStep();
+  openModal(modalState.modal);
+  document.addEventListener('keydown', handleDrinkSubmitModalKeydown, true);
+  modalState.yesButton?.focus({ preventScroll: true });
+
+  return new Promise((resolve) => {
+    modalState.resolver = resolve;
+  }).finally(() => {
+    document.removeEventListener('keydown', handleDrinkSubmitModalKeydown, true);
+  });
+}
+
+async function handleOrderSubmitIntent() {
+  if (orderSubmitIntentInFlight) return;
+
+  const validationError = validateOrder();
+  if (validationError) {
+    formErrorElement.textContent = validationError;
+    openMobileCart();
+    return;
+  }
+
+  orderSubmitIntentInFlight = true;
+  try {
+    if (!hasDrinkInCart()) {
+      devLog('No drink in cart, showing pre-submit modal');
+      const decision = await openDrinkSubmitModal();
+      if (decision?.action === 'add') {
+        const added = addDrinkFromPreSubmitPrompt(decision.drinkType);
+        if (!added) {
+          showToast('לא הצלחנו להוסיף שתייה כרגע', 1800);
+        } else {
+          showToast('נוספה שתייה לעגלה', 1400);
+        }
+      }
+    }
+
+    await submitOrderFromConfirm();
+  } finally {
+    orderSubmitIntentInFlight = false;
+  }
+}
+
+function parseItemData(node) {
+  const id = node.dataset.itemId;
+  const name = node.dataset.itemName;
+  const price = Number(node.dataset.itemPrice || 0);
+  if (!id || !name || Number.isNaN(price)) return null;
+  return {
+    id,
+    name,
+    price,
+    node,
+    isSandwich: SANDWICH_ITEM_IDS.has(id),
+    isDrink: DRINK_ITEM_IDS.has(id),
+  };
+}
+
+function isSandwichItem(itemId) {
+  return SANDWICH_ITEM_IDS.has(itemId);
+}
+
+function isDrinkItem(itemOrId) {
+  if (!itemOrId) return false;
+
+  if (typeof itemOrId === 'string') {
+    return DRINK_ITEM_IDS.has(itemOrId);
+  }
+
+  const itemId = String(itemOrId.itemId || itemOrId.id || '').trim();
+  if (itemId && DRINK_ITEM_IDS.has(itemId)) return true;
+  if (itemOrId.isDrink === true) return true;
+
+  const category = normalizeDrinkCandidate(itemOrId.category);
+  if (
+    category === 'drink'
+    || category === normalizeDrinkCandidate(DRINK_CATEGORY_LABEL)
+    || category.includes('שתייה')
+    || category.includes('שתיה')
+  ) {
+    return true;
+  }
+
+  const type = normalizeDrinkCandidate(itemOrId.type);
+  if (type === 'drink') return true;
+
+  const combinedText = normalizeDrinkCandidate(
+    `${itemOrId.name || ''} ${itemOrId.displayName || ''} ${itemOrId.baseName || ''}`,
+  );
+  return DRINK_NAME_KEYWORDS.some((keyword) => combinedText.includes(keyword));
+}
+
+function sanitizeDrinkType(value) {
+  const safeValue = String(value || '').trim();
+  return DRINK_TYPE_SET.has(safeValue) ? safeValue : '';
+}
+
+function readDrinkTypeFromMenu(itemId) {
+  const select = menuNodeById(itemId)?.querySelector('.drink-type-select');
+  return sanitizeDrinkType(select?.value || '');
+}
+
+function setDrinkError(itemId, message = '') {
+  const errorNode = menuNodeById(itemId)?.querySelector('.drink-type-error');
+  if (!errorNode) return;
+  errorNode.textContent = message;
+  errorNode.hidden = !message;
+}
+
+function clearDrinkError(itemId) {
+  setDrinkError(itemId, '');
+}
+
+function sanitizeSelection(values, allowedValues) {
+  if (!Array.isArray(values)) return [];
+  const normalized = [];
+  values.forEach((value) => {
+    const safeValue = String(value);
+    if (allowedValues.has(safeValue) && !normalized.includes(safeValue)) {
+      normalized.push(safeValue);
+    }
+  });
+  return normalized;
+}
+
+function normalizeSandwichOptions(options) {
+  const raw = options || {};
+  const salads = sanitizeSelection(raw.salads, SALAD_OPTION_SET);
+  const sauces = sanitizeSelection(raw.sauces, SAUCE_OPTION_SET);
+  const pickles = sanitizeSelection(raw.pickles, PICKLE_OPTION_SET);
+  const paidAddons = sanitizeSelection(raw.paidAddons, PAID_ADDON_IDS);
+  return {
+    salads,
+    sauces,
+    pickles,
+    paidAddons,
+  };
+}
+
+function copyOptions(options) {
+  const normalized = normalizeSandwichOptions(options);
+  return {
+    salads: [...normalized.salads],
+    sauces: [...normalized.sauces],
+    pickles: [...normalized.pickles],
+    paidAddons: [...normalized.paidAddons],
+  };
+}
+
+function optionModifiers(options) {
+  if (!options) {
+    return { addonModifier: 0 };
+  }
+
+  const normalized = normalizeSandwichOptions(options);
+  const addonModifier = normalized.paidAddons.reduce((sum, addonId) => {
+    const addon = PAID_ADDON_BY_ID.get(addonId);
+    return sum + (addon ? addon.price : 0);
+  }, 0);
+  return { addonModifier };
+}
+
+function optionsEqual(a, b) {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  const left = normalizeSandwichOptions(a);
+  const right = normalizeSandwichOptions(b);
+  return (
+    left.salads.join('|') === right.salads.join('|') &&
+    left.sauces.join('|') === right.sauces.join('|') &&
+    left.pickles.join('|') === right.pickles.join('|') &&
+    left.paidAddons.join('|') === right.paidAddons.join('|')
+  );
+}
+
+function optionPrice(options) {
+  const { addonModifier } = optionModifiers(options);
+  return addonModifier;
+}
+
+function lineUnitPrice(line) {
+  return line.basePrice + optionPrice(line.options);
+}
+
+function computeMenuItemPricing(item) {
+  const options = item.isSandwich ? readSandwichOptionsFromMenu(item.id) : null;
+  const { addonModifier } = optionModifiers(options);
+  const basePrice = item.price;
+  const finalPrice = basePrice + addonModifier;
+  return { basePrice, addonModifier, finalPrice };
+}
+
+function updateMenuItemPrice(itemId) {
+  const item = itemsById.get(itemId);
+  if (!item) return;
+
+  const pricing = computeMenuItemPricing(item);
+  menuItemPricing.set(itemId, pricing);
+  item.node.dataset.basePrice = String(pricing.basePrice);
+  item.node.dataset.addonModifier = String(pricing.addonModifier);
+
+  const priceElement = item.node.querySelector('.price-badge');
+  if (priceElement) priceElement.textContent = toShekel(pricing.finalPrice);
+}
+
+function lineTotal(line) {
+  return line.quantity * lineUnitPrice(line);
+}
+
+function createLineId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `line-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function menuNodeById(itemId) {
+  return document.querySelector(`#menu [data-item-id="${itemId}"]`);
+}
+
+function nextNativeSelectId(prefix = 'select') {
+  nativeSelectIdCounter += 1;
+  return `${prefix}-${nativeSelectIdCounter}`;
+}
+
+function closeStyledSelectByRoot(root, focusTrigger = false) {
+  if (!root) return;
+  const trigger = root.querySelector('.select-trigger');
+  const panel = root.querySelector('.select-panel');
+  root.classList.remove('is-open');
+  if (panel) panel.hidden = true;
+  if (trigger) {
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.removeAttribute('aria-activedescendant');
+    if (focusTrigger) trigger.focus();
+  }
+}
+
+function closeAllStyledSelects(exceptRoot = null) {
+  document.querySelectorAll('.select-wrap.is-open').forEach((root) => {
+    if (root !== exceptRoot) closeStyledSelectByRoot(root);
+  });
+}
+
+function resolveStyledSelectIndex(selectNode) {
+  const selectedIndex = selectNode.selectedIndex;
+  if (selectedIndex >= 0) return selectedIndex;
+  const value = selectNode.value;
+  if (!value) return -1;
+  return Array.from(selectNode.options).findIndex((option) => option.value === value);
+}
+
+function firstEnabledStyledOption(optionNodes) {
+  return optionNodes.findIndex((node) => !node.disabled);
+}
+
+function setStyledSelectActiveIndex(selectNode, nextIndex) {
+  const root = selectNode?._styledSelectRoot;
+  if (!root) return;
+
+  const trigger = root.querySelector('.select-trigger');
+  const optionNodes = Array.from(root.querySelectorAll('.select-option'));
+  if (optionNodes.length === 0) return;
+
+  let index = Number.isInteger(nextIndex) ? nextIndex : Number(nextIndex);
+  if (Number.isNaN(index)) index = 0;
+  index = Math.max(0, Math.min(index, optionNodes.length - 1));
+
+  if (optionNodes[index]?.disabled) {
+    const fallback = firstEnabledStyledOption(optionNodes);
+    if (fallback < 0) return;
+    index = fallback;
+  }
+
+  optionNodes.forEach((node, optionIndex) => {
+    node.classList.toggle('select-option--active', optionIndex === index);
+  });
+
+  const activeNode = optionNodes[index];
+  if (activeNode?.id && trigger) {
+    trigger.setAttribute('aria-activedescendant', activeNode.id);
+    activeNode.scrollIntoView({ block: 'nearest' });
+  }
+  root.dataset.activeIndex = String(index);
+}
+
+function syncStyledSelect(selectNode) {
+  const root = selectNode?._styledSelectRoot;
+  if (!root) return;
+
+  const trigger = root.querySelector('.select-trigger');
+  const labelNode = root.querySelector('.select-trigger-label');
+  const panel = root.querySelector('.select-panel');
+  const optionNodes = Array.from(root.querySelectorAll('.select-option'));
+  if (!trigger || !labelNode || !panel) return;
+
+  const selectedIndex = resolveStyledSelectIndex(selectNode);
+  const safeSelectedIndex =
+    selectedIndex >= 0 && selectedIndex < optionNodes.length ? selectedIndex : -1;
+  const selectedNode =
+    safeSelectedIndex >= 0 ? optionNodes[safeSelectedIndex] : null;
+  const selectedLabel = selectedNode?.textContent?.trim() || '';
+
+  labelNode.textContent = selectedLabel;
+  optionNodes.forEach((node, index) => {
+    const isSelected = index === safeSelectedIndex;
+    node.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+  });
+
+  const canInteract = !selectNode.disabled && optionNodes.length > 0;
+  trigger.disabled = !canInteract;
+  root.classList.toggle('is-disabled', !canInteract);
+  if (!canInteract) closeStyledSelectByRoot(root);
+
+  const currentActive = Number(root.dataset.activeIndex);
+  if (
+    Number.isNaN(currentActive) ||
+    currentActive < 0 ||
+    currentActive >= optionNodes.length ||
+    optionNodes[currentActive]?.disabled
+  ) {
+    const fallbackIndex =
+      safeSelectedIndex >= 0 && !optionNodes[safeSelectedIndex]?.disabled
+        ? safeSelectedIndex
+        : firstEnabledStyledOption(optionNodes);
+    if (fallbackIndex >= 0) {
+      setStyledSelectActiveIndex(selectNode, fallbackIndex);
+    }
+  } else {
+    setStyledSelectActiveIndex(selectNode, currentActive);
+  }
+}
+
+function rebuildStyledSelectOptions(selectNode) {
+  const root = selectNode?._styledSelectRoot;
+  if (!root) return;
+
+  const trigger = root.querySelector('.select-trigger');
+  const panel = root.querySelector('.select-panel');
+  if (!trigger || !panel) return;
+
+  const selectId = selectNode.id || nextNativeSelectId('native-select');
+  if (!selectNode.id) selectNode.id = selectId;
+
+  const triggerId = `${selectId}-trigger`;
+  const panelId = `${selectId}-panel`;
+  trigger.id = triggerId;
+  panel.id = panelId;
+  trigger.setAttribute('aria-controls', panelId);
+  panel.setAttribute('aria-labelledby', triggerId);
+
+  panel.innerHTML = '';
+  Array.from(selectNode.options).forEach((option, index) => {
+    const optionNode = document.createElement('button');
+    optionNode.type = 'button';
+    optionNode.className = 'select-option';
+    optionNode.id = `${panelId}-opt-${index}`;
+    optionNode.dataset.index = String(index);
+    optionNode.dataset.value = option.value;
+    optionNode.setAttribute('role', 'option');
+    optionNode.setAttribute('aria-selected', 'false');
+    optionNode.textContent = option.textContent || '';
+    if (option.disabled) {
+      optionNode.disabled = true;
+      optionNode.setAttribute('aria-disabled', 'true');
+    }
+    panel.append(optionNode);
+  });
+
+  syncStyledSelect(selectNode);
+}
+
+function moveStyledSelectActiveIndex(selectNode, direction) {
+  const root = selectNode?._styledSelectRoot;
+  if (!root) return;
+  const optionNodes = Array.from(root.querySelectorAll('.select-option'));
+  if (optionNodes.length === 0) return;
+
+  let index = Number(root.dataset.activeIndex);
+  if (Number.isNaN(index)) {
+    const selectedIndex = resolveStyledSelectIndex(selectNode);
+    index = selectedIndex >= 0 ? selectedIndex : firstEnabledStyledOption(optionNodes);
+  }
+
+  const step = direction >= 0 ? 1 : -1;
+  let cursor = index;
+  while (cursor >= 0 && cursor < optionNodes.length) {
+    cursor += step;
+    if (cursor < 0 || cursor >= optionNodes.length) break;
+    if (!optionNodes[cursor]?.disabled) {
+      setStyledSelectActiveIndex(selectNode, cursor);
+      break;
+    }
+  }
+}
+
+function openStyledSelect(selectNode) {
+  const root = selectNode?._styledSelectRoot;
+  if (!root || root.classList.contains('is-disabled')) return;
+  const trigger = root.querySelector('.select-trigger');
+  const panel = root.querySelector('.select-panel');
+  if (!trigger || !panel) return;
+
+  closeAllStyledSelects(root);
+  root.classList.add('is-open');
+  panel.hidden = false;
+  trigger.setAttribute('aria-expanded', 'true');
+
+  const selectedIndex = resolveStyledSelectIndex(selectNode);
+  const optionNodes = Array.from(root.querySelectorAll('.select-option'));
+  const preferredIndex =
+    selectedIndex >= 0 && !optionNodes[selectedIndex]?.disabled
+      ? selectedIndex
+      : firstEnabledStyledOption(optionNodes);
+  if (preferredIndex >= 0) setStyledSelectActiveIndex(selectNode, preferredIndex);
+}
+
+function selectStyledOptionByIndex(selectNode, optionIndex) {
+  const root = selectNode?._styledSelectRoot;
+  if (!root) return;
+  const optionNodes = Array.from(root.querySelectorAll('.select-option'));
+  const optionNode = optionNodes[optionIndex];
+  if (!optionNode || optionNode.disabled) return;
+
+  const nextValue = optionNode.dataset.value ?? '';
+  const changed = selectNode.value !== nextValue;
+  selectNode.value = nextValue;
+  if (changed) {
+    selectNode.dispatchEvent(new Event('change', { bubbles: true }));
+  } else {
+    syncStyledSelect(selectNode);
+  }
+
+  closeStyledSelectByRoot(root, true);
+}
+
+function initStyledSelect(selectNode) {
+  if (!selectNode || selectNode.dataset.nativeStyledSelectReady === 'true') return;
+
+  const root = document.createElement('div');
+  root.className = 'select-wrap';
+  root.setAttribute('dir', 'rtl');
+
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'select-trigger';
+  trigger.setAttribute('role', 'combobox');
+  trigger.setAttribute('aria-haspopup', 'listbox');
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.innerHTML = '<span class="select-trigger-label"></span>';
+
+  const panel = document.createElement('div');
+  panel.className = 'select-panel';
+  panel.setAttribute('role', 'listbox');
+  panel.hidden = true;
+
+  root.append(trigger, panel);
+  selectNode.insertAdjacentElement('afterend', root);
+  selectNode.classList.add('select-native-hidden');
+  selectNode.dataset.nativeStyledSelectReady = 'true';
+  selectNode._styledSelectRoot = root;
+
+  trigger.addEventListener('click', () => {
+    if (root.classList.contains('is-open')) {
+      closeStyledSelectByRoot(root);
+    } else {
+      openStyledSelect(selectNode);
+    }
+  });
+
+  trigger.addEventListener('keydown', (event) => {
+    if (event.key === 'Tab') {
+      closeStyledSelectByRoot(root);
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeStyledSelectByRoot(root, true);
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (!root.classList.contains('is-open')) {
+        openStyledSelect(selectNode);
+      } else {
+        moveStyledSelectActiveIndex(selectNode, 1);
+      }
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!root.classList.contains('is-open')) {
+        openStyledSelect(selectNode);
+      } else {
+        moveStyledSelectActiveIndex(selectNode, -1);
+      }
+      return;
+    }
+
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      if (!root.classList.contains('is-open')) {
+        openStyledSelect(selectNode);
+      } else {
+        const activeIndex = Number(root.dataset.activeIndex);
+        selectStyledOptionByIndex(selectNode, activeIndex);
+      }
+    }
+  });
+
+  panel.addEventListener('mousedown', (event) => {
+    event.preventDefault();
+  });
+
+  panel.addEventListener('mousemove', (event) => {
+    const optionNode = event.target.closest('.select-option');
+    if (!optionNode || optionNode.disabled) return;
+    const optionIndex = Number(optionNode.dataset.index);
+    if (!Number.isNaN(optionIndex)) setStyledSelectActiveIndex(selectNode, optionIndex);
+  });
+
+  panel.addEventListener('click', (event) => {
+    const optionNode = event.target.closest('.select-option');
+    if (!optionNode || optionNode.disabled) return;
+    const optionIndex = Number(optionNode.dataset.index);
+    if (!Number.isNaN(optionIndex)) {
+      selectStyledOptionByIndex(selectNode, optionIndex);
+    }
+  });
+
+  selectNode.addEventListener('change', () => {
+    syncStyledSelect(selectNode);
+  });
+
+  if (!nativeSelectGlobalBound) {
+    nativeSelectGlobalBound = true;
+
+    document.addEventListener('click', (event) => {
+      document.querySelectorAll('.select-wrap.is-open').forEach((node) => {
+        if (!node.contains(event.target)) closeStyledSelectByRoot(node);
+      });
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      document.querySelectorAll('.select-wrap.is-open').forEach((node) => {
+        closeStyledSelectByRoot(node);
+      });
+    });
+  }
+
+  rebuildStyledSelectOptions(selectNode);
+}
+
+function customSelectMarkup({ id, inputClass, options, value }) {
+  const selectedValue = options.some((option) => option.value === value)
+    ? value
+    : options[0].value;
+  const selectedLabel =
+    options.find((option) => option.value === selectedValue)?.label || '';
+  const listId = `${id}-listbox`;
+  const triggerId = `${id}-trigger`;
+  const optionsMarkup = options
+    .map((option, index) => {
+      const isSelected = option.value === selectedValue;
+      const optionId = `${listId}-opt-${index}`;
+      return `
+        <li
+          id="${optionId}"
+          class="custom-select-option${isSelected ? ' is-selected' : ''}"
+          role="option"
+          data-value="${option.value}"
+          aria-selected="${isSelected ? 'true' : 'false'}"
+          tabindex="-1"
+        >
+          ${option.label}
+        </li>
+      `;
+    })
+    .join('');
+
+  return `
+    <div class="custom-select" data-custom-select>
+      <input type="hidden" id="${id}" class="${inputClass}" value="${selectedValue}" />
+      <button
+        type="button"
+        class="custom-select-trigger"
+        id="${triggerId}"
+        role="combobox"
+        aria-expanded="false"
+        aria-haspopup="listbox"
+        aria-controls="${listId}"
+      >
+        <span class="custom-select-value">${selectedLabel}</span>
+        <span class="custom-select-arrow" aria-hidden="true">▾</span>
+      </button>
+      <ul
+        id="${listId}"
+        class="custom-select-list"
+        role="listbox"
+        aria-labelledby="${triggerId}"
+        hidden
+      >
+        ${optionsMarkup}
+      </ul>
+    </div>
+  `;
+}
+
+function closeCustomSelect(root, focusTrigger = false) {
+  if (!root) return;
+  const trigger = root.querySelector('.custom-select-trigger');
+  const list = root.querySelector('.custom-select-list');
+  root.classList.remove('open');
+  if (trigger) {
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.removeAttribute('aria-activedescendant');
+  }
+  if (list) list.hidden = true;
+  if (focusTrigger && trigger) trigger.focus();
+}
+
+function openCustomSelect(root) {
+  if (!root) return;
+  document.querySelectorAll('[data-custom-select].open').forEach((node) => {
+    if (node !== root) closeCustomSelect(node);
+  });
+
+  const trigger = root.querySelector('.custom-select-trigger');
+  const list = root.querySelector('.custom-select-list');
+  root.classList.add('open');
+  if (trigger) trigger.setAttribute('aria-expanded', 'true');
+  if (list) list.hidden = false;
+}
+
+function initCustomSelect(root) {
+  if (!root || root.dataset.customSelectReady === 'true') return;
+
+  const hiddenInput = root.querySelector('input[type="hidden"]');
+  const trigger = root.querySelector('.custom-select-trigger');
+  const valueNode = root.querySelector('.custom-select-value');
+  const list = root.querySelector('.custom-select-list');
+  const optionNodes = Array.from(root.querySelectorAll('.custom-select-option'));
+  if (!hiddenInput || !trigger || !valueNode || !list || optionNodes.length === 0) {
+    return;
+  }
+
+  root.dataset.customSelectReady = 'true';
+  let activeIndex = 0;
+
+  const setActiveIndex = (nextIndex) => {
+    if (optionNodes.length === 0) return;
+    activeIndex = Math.max(0, Math.min(nextIndex, optionNodes.length - 1));
+    optionNodes.forEach((node, index) => {
+      node.classList.toggle('is-active', index === activeIndex);
+    });
+    const activeNode = optionNodes[activeIndex];
+    if (activeNode?.id) trigger.setAttribute('aria-activedescendant', activeNode.id);
+    activeNode?.scrollIntoView({ block: 'nearest' });
+  };
+
+  const applySelection = (nextIndex, emitChange = true) => {
+    const selectedNode = optionNodes[nextIndex];
+    if (!selectedNode) return;
+    hiddenInput.value = selectedNode.dataset.value || '';
+    valueNode.textContent = selectedNode.textContent?.trim() || '';
+    optionNodes.forEach((node, index) => {
+      const selected = index === nextIndex;
+      node.setAttribute('aria-selected', selected ? 'true' : 'false');
+      node.classList.toggle('is-selected', selected);
+    });
+    setActiveIndex(nextIndex);
+    if (emitChange) {
+      hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  };
+
+  root._setCustomSelectValue = (value, emitChange = false) => {
+    const nextIndex = optionNodes.findIndex((node) => node.dataset.value === value);
+    if (nextIndex >= 0) applySelection(nextIndex, emitChange);
+  };
+
+  const initialIndex = Math.max(
+    0,
+    optionNodes.findIndex((node) => node.dataset.value === hiddenInput.value),
+  );
+  applySelection(initialIndex, false);
+  closeCustomSelect(root);
+
+  trigger.addEventListener('click', () => {
+    if (root.classList.contains('open')) {
+      closeCustomSelect(root);
+    } else {
+      openCustomSelect(root);
+      setActiveIndex(activeIndex);
+    }
+  });
+
+  trigger.addEventListener('keydown', (event) => {
+    const isOpen = root.classList.contains('open');
+    const handledKeys = ['Enter', ' ', 'ArrowDown', 'ArrowUp', 'Escape'];
+    if (handledKeys.includes(event.key)) event.preventDefault();
+
+    if (event.key === 'Enter' || event.key === ' ') {
+      if (!isOpen) {
+        openCustomSelect(root);
+        setActiveIndex(activeIndex);
+      } else {
+        applySelection(activeIndex, true);
+        closeCustomSelect(root, true);
+      }
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      if (!isOpen) openCustomSelect(root);
+      setActiveIndex(activeIndex + 1);
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      if (!isOpen) openCustomSelect(root);
+      setActiveIndex(activeIndex - 1);
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      closeCustomSelect(root, true);
+      return;
+    }
+
+    if (event.key === 'Tab') {
+      closeCustomSelect(root);
+    }
+  });
+
+  list.addEventListener('mousedown', (event) => {
+    event.preventDefault();
+  });
+
+  list.addEventListener('mousemove', (event) => {
+    const option = event.target.closest('.custom-select-option');
+    if (!option) return;
+    const nextIndex = optionNodes.indexOf(option);
+    if (nextIndex >= 0) setActiveIndex(nextIndex);
+  });
+
+  list.addEventListener('click', (event) => {
+    const option = event.target.closest('.custom-select-option');
+    if (!option) return;
+    const nextIndex = optionNodes.indexOf(option);
+    if (nextIndex >= 0) {
+      applySelection(nextIndex, true);
+      closeCustomSelect(root, true);
+    }
+  });
+
+  if (!customSelectGlobalBound) {
+    customSelectGlobalBound = true;
+    document.addEventListener('click', (event) => {
+      document.querySelectorAll('[data-custom-select].open').forEach((node) => {
+        if (!node.contains(event.target)) closeCustomSelect(node);
+      });
+    });
+  }
+}
+
+function initCustomSelects(scope) {
+  if (!scope) return;
+  scope.querySelectorAll('[data-custom-select]').forEach((node) => initCustomSelect(node));
+}
+
+function setCustomSelectValue(inputNode, value, emitChange = false) {
+  const root = inputNode?.closest?.('[data-custom-select]');
+  if (!root) return;
+  if (typeof root._setCustomSelectValue === 'function') {
+    root._setCustomSelectValue(value, emitChange);
+    return;
+  }
+  const hiddenInput = root.querySelector('input[type="hidden"]');
+  if (hiddenInput) hiddenInput.value = value;
+}
+
+function renderOptionChecks(
+  groupKey,
+  groupClass,
+  options,
+  selectedValues,
+  withPrice = false,
+  includeAllOption = false,
+) {
+  const selectedSet = new Set(selectedValues);
+  const optionMarkup = options
+    .map((option) => {
+      const value = typeof option === 'string' ? option : option.id;
+      const label = typeof option === 'string' ? option : option.label;
+      const suffix =
+        withPrice && typeof option !== 'string' ? ` (+${toShekel(option.price)})` : '';
+      const checked = selectedSet.has(value) ? 'checked' : '';
+      const addonData =
+        withPrice && typeof option !== 'string'
+          ? ` data-addon-id="${option.id}" data-addon-price="${option.price}"`
+          : '';
+      return `
+        <label class="shawarma-chip">
+          <input type="checkbox" class="${groupClass} group-choice chip-input" data-group="${groupKey}" value="${value}"${addonData} ${checked} />
+          <span class="chip-label">${label}${suffix}</span>
+        </label>
+      `;
+    })
+    .join('');
+
+  if (!includeAllOption) return optionMarkup;
+
+  const allSelected =
+    options.length > 0 &&
+    options.every((option) => {
+      const value = typeof option === 'string' ? option : option.id;
+      return selectedSet.has(value);
+    });
+  const allChecked = allSelected ? 'checked' : '';
+  return `
+    <label class="shawarma-chip">
+      <input type="checkbox" class="group-all-toggle chip-input" data-group="${groupKey}" ${allChecked} />
+      <span class="chip-label">הכול</span>
+    </label>
+    ${optionMarkup}
+  `;
+}
+
+function renderOptionGroup({
+  title,
+  hint,
+  groupKey,
+  groupClass,
+  options,
+  selectedValues,
+  withPrice = false,
+  includeAllOption = false,
+}) {
+  return `
+    <div class="shawarma-group">
+      <div class="shawarma-group-head">
+        <div class="option-label">${title}</div>
+        <div class="option-hint">${hint}</div>
+      </div>
+      <div class="checks-wrap">
+        ${renderOptionChecks(
+          groupKey,
+          groupClass,
+          options,
+          selectedValues,
+          withPrice,
+          includeAllOption,
+        )}
+      </div>
+    </div>
+  `;
+}
+
+function syncGroupAllToggle(root, groupKey) {
+  if (!root) return;
+  const allToggle = root.querySelector(`.group-all-toggle[data-group="${groupKey}"]`);
+  if (!allToggle) return;
+  const itemInputs = Array.from(
+    root.querySelectorAll(`.group-choice[data-group="${groupKey}"]`),
+  );
+  allToggle.checked =
+    itemInputs.length > 0 && itemInputs.every((input) => input.checked);
+}
+
+function syncAllGroupToggles(root) {
+  if (!root) return;
+  ['salads', 'sauces', 'pickles'].forEach((groupKey) =>
+    syncGroupAllToggle(root, groupKey),
+  );
+}
+
+function initGroupAllBehavior(root) {
+  if (!root || root.dataset.groupAllReady === 'true') return;
+  root.dataset.groupAllReady = 'true';
+
+  root.addEventListener('change', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    const groupKey = target.dataset.group;
+    if (!groupKey) return;
+
+    if (target.classList.contains('group-all-toggle')) {
+      root
+        .querySelectorAll(`.group-choice[data-group="${groupKey}"]`)
+        .forEach((input) => {
+          input.checked = target.checked;
+        });
+    }
+
+    syncGroupAllToggle(root, groupKey);
+  });
+
+  syncAllGroupToggles(root);
+}
+
+function buildSandwichOptionsEditor(itemId) {
+  const options = copyOptions(
+    state.lastOptions[itemId] || DEFAULT_SANDWICH_OPTIONS,
+  );
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'shawarma-options';
+  wrapper.dataset.itemId = itemId;
+  wrapper.innerHTML = `
+    ${renderOptionGroup({
+      title: 'סלטים',
+      hint: 'בחרו כמה שתרצו',
+      groupKey: 'salads',
+      groupClass: 'salad-choice',
+      options: SALAD_OPTIONS,
+      selectedValues: options.salads,
+      includeAllOption: true,
+    })}
+    ${renderOptionGroup({
+      title: 'רטבים',
+      hint: 'בחרו כמה שתרצו',
+      groupKey: 'sauces',
+      groupClass: 'sauce-choice',
+      options: SAUCE_OPTIONS,
+      selectedValues: options.sauces,
+      includeAllOption: true,
+    })}
+    ${renderOptionGroup({
+      title: 'חמוצים',
+      hint: 'בחרו כמה שתרצו',
+      groupKey: 'pickles',
+      groupClass: 'pickle-choice',
+      options: PICKLE_OPTIONS,
+      selectedValues: options.pickles,
+      includeAllOption: true,
+    })}
+    ${renderOptionGroup({
+      title: 'תוספות בתשלום',
+      hint: 'בחירה תשפיע על המחיר',
+      groupKey: 'paidAddons',
+      groupClass: 'paid-addon',
+      options: PAID_ADDONS,
+      selectedValues: options.paidAddons,
+      withPrice: true,
+    })}
+  `;
+
+  initGroupAllBehavior(wrapper);
+
+  wrapper.addEventListener('change', () => {
+    state.lastOptions[itemId] = readSandwichOptionsFromMenu(itemId);
+    updateMenuItemPrice(itemId);
+    saveState();
+  });
+
+  return wrapper;
+}
+
+function readSandwichOptionsFromRoot(root) {
+  if (!root) return copyOptions(DEFAULT_SANDWICH_OPTIONS);
+  const options = {
+    salads: Array.from(root.querySelectorAll('.salad-choice:checked')).map(
+      (input) => input.value,
+    ),
+    sauces: Array.from(root.querySelectorAll('.sauce-choice:checked')).map(
+      (input) => input.value,
+    ),
+    pickles: Array.from(root.querySelectorAll('.pickle-choice:checked')).map(
+      (input) => input.value,
+    ),
+    paidAddons: Array.from(root.querySelectorAll('.paid-addon:checked')).map(
+      (input) => input.value,
+    ),
+  };
+  return normalizeSandwichOptions(options);
+}
+
+function readSandwichOptionsFromMenu(itemId) {
+  const root = menuNodeById(itemId)?.querySelector('.shawarma-options');
+  return readSandwichOptionsFromRoot(root);
+}
+
+function applySandwichSelections(root, options) {
+  if (!root) return;
+  const normalized = normalizeSandwichOptions(options);
+  const setValues = (selector, selectedValues) => {
+    const selectedSet = new Set(selectedValues);
+    root.querySelectorAll(selector).forEach((input) => {
+      input.checked = selectedSet.has(input.value);
+    });
+  };
+  setValues('.salad-choice', normalized.salads);
+  setValues('.sauce-choice', normalized.sauces);
+  setValues('.pickle-choice', normalized.pickles);
+  setValues('.paid-addon', normalized.paidAddons);
+  syncAllGroupToggles(root);
+}
+
+function cancelPendingDrinkTypeChange() {
+  const pending = ui.drinkChangeModal.pending;
+  if (pending?.selectNode) {
+    pending.selectNode.value = pending.previousType || '';
+    syncStyledSelect(pending.selectNode);
+  }
+  ui.drinkChangeModal.pending = null;
+  if (ui.drinkChangeModal.modal) closeModal(ui.drinkChangeModal.modal);
+}
+
+function applyPendingDrinkTypeChange() {
+  const pending = ui.drinkChangeModal.pending;
+  if (!pending) return;
+
+  state.cartLines = state.cartLines.filter((line) => line.itemId !== pending.itemId);
+  state.lastDrinkType[pending.itemId] = pending.nextType;
+  clearDrinkError(pending.itemId);
+  ui.drinkChangeModal.pending = null;
+  if (ui.drinkChangeModal.modal) closeModal(ui.drinkChangeModal.modal);
+  saveState();
+  renderCart();
+}
+
+function openDrinkTypeChangeConfirmation(itemId, nextType, selectNode) {
+  ui.drinkChangeModal.pending = {
+    itemId,
+    nextType,
+    previousType: state.lastDrinkType[itemId] || '',
+    selectNode,
+  };
+  openModal(ui.drinkChangeModal.modal);
+}
+
+function handleDrinkTypeSelectionChange(itemId, selectNode) {
+  const nextType = sanitizeDrinkType(selectNode.value);
+  const previousType = sanitizeDrinkType(state.lastDrinkType[itemId] || '');
+  const itemQuantity = getItemQuantity(itemId);
+
+  if (!nextType) {
+    setDrinkError(itemId, 'חייב לבחור שתייה');
+    return;
+  }
+
+  clearDrinkError(itemId);
+  if (nextType === previousType) return;
+
+  if (itemQuantity > 0) {
+    openDrinkTypeChangeConfirmation(itemId, nextType, selectNode);
+    return;
+  }
+
+  state.lastDrinkType[itemId] = nextType;
+  saveState();
+}
+
+function buildDrinkTypeSelector(item) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'drink-type-wrap';
+
+  const selectId = `drink-type-${item.id}`;
+  const optionsMarkup = DRINK_TYPE_OPTIONS.map(
+    (drinkType) => `<option value="${drinkType}">${drinkType}</option>`,
+  ).join('');
+
+  wrapper.innerHTML = `
+    <label class="drink-type-label" for="${selectId}">בחר שתייה</label>
+    <select class="drink-type-select" id="${selectId}">
+      <option value="" disabled selected>בחר שתייה…</option>
+      ${optionsMarkup}
+    </select>
+    <p class="drink-type-error" hidden>חייב לבחור שתייה</p>
+  `;
+
+  const selectNode = wrapper.querySelector('.drink-type-select');
+  const current = sanitizeDrinkType(state.lastDrinkType[item.id] || '');
+  selectNode.value = current || '';
+  initStyledSelect(selectNode);
+
+  selectNode.addEventListener('change', () => {
+    handleDrinkTypeSelectionChange(item.id, selectNode);
+  });
+
+  return wrapper;
+}
+
+function buildQuantityControls(item) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'order-controls qty';
+
+  const plusButton = document.createElement('button');
+  plusButton.type = 'button';
+  plusButton.className = 'qty-btn';
+  plusButton.textContent = '+';
+  plusButton.setAttribute('aria-label', `הוסף ${item.name}`);
+
+  const qtyDisplay = document.createElement('span');
+  qtyDisplay.className = 'qty-display';
+  qtyDisplay.id = `qty-${item.id}`;
+  qtyDisplay.textContent = '0';
+
+  const minusButton = document.createElement('button');
+  minusButton.type = 'button';
+  minusButton.className = 'qty-btn';
+  minusButton.textContent = '-';
+  minusButton.setAttribute('aria-label', `הסר ${item.name}`);
+
+  plusButton.addEventListener('click', () => addItemFromMenu(item.id));
+  minusButton.addEventListener('click', () => removeItemFromMenu(item.id));
+
+  wrapper.append(plusButton, qtyDisplay, minusButton);
+  return wrapper;
+}
+
+function attachControlsToMenuItem(item) {
+  const priceElement = item.node.querySelector('.price');
+  if (!priceElement) return;
+  priceElement.classList.add('price-badge');
+
+  const actions = document.createElement('div');
+  actions.className = 'menu-item-actions buy-row';
+  priceElement.replaceWith(actions);
+  actions.append(buildQuantityControls(item), priceElement);
+
+  if (item.isSandwich) {
+    item.node.classList.add('menu-item-with-options');
+    const textColumn = item.node.querySelector(':scope > .menu-item-main');
+    if (textColumn) {
+      textColumn.append(buildSandwichOptionsEditor(item.id));
+    }
+  }
+
+  if (item.isDrink) {
+    item.node.classList.add('menu-item-with-options');
+    const textColumn = item.node.querySelector(':scope > .menu-item-main');
+    if (textColumn) {
+      textColumn.append(buildDrinkTypeSelector(item));
+    }
+  }
+}
+
+function getItemQuantity(itemId) {
+  return state.cartLines
+    .filter((line) => line.itemId === itemId)
+    .reduce((sum, line) => sum + line.quantity, 0);
+}
+
+function findMatchingEditableLine(itemId, options, drinkType = '') {
+  return state.cartLines.find(
+    (line) =>
+      line.itemId === itemId &&
+      line.note.trim() === '' &&
+      optionsEqual(line.options, options) &&
+      sanitizeDrinkType(line.drinkType) === sanitizeDrinkType(drinkType),
+  );
+}
+
+function addItemFromMenu(itemId) {
+  const item = itemsById.get(itemId);
+  if (!item) return;
+
+  const options = item.isSandwich
+    ? readSandwichOptionsFromMenu(itemId)
+    : null;
+  const drinkType = item.isDrink ? readDrinkTypeFromMenu(itemId) : '';
+
+  if (item.isDrink && !drinkType) {
+    setDrinkError(itemId, 'חייב לבחור שתייה');
+    return;
+  }
+  if (item.isDrink) {
+    state.lastDrinkType[itemId] = drinkType;
+    clearDrinkError(itemId);
+  }
+
+  if (item.isSandwich) {
+    state.lastOptions[itemId] = copyOptions(options);
+  }
+
+  const existing = findMatchingEditableLine(itemId, options, drinkType);
+  const baseName = item.name;
+  const displayName = item.isDrink ? `${baseName} — ${drinkType}` : baseName;
+  if (existing) {
+    existing.quantity += 1;
+  } else {
+    state.cartLines.push({
+      lineId: createLineId(),
+      itemId: item.id,
+      name: displayName,
+      baseName,
+      displayName,
+      category: item.isDrink ? DRINK_CATEGORY_LABEL : '',
+      drinkType: item.isDrink ? drinkType : '',
+      basePrice: item.price,
+      quantity: 1,
+      options,
+      note: '',
+    });
+  }
+
+  saveState();
+  renderCart();
+}
+
+function removeItemFromMenu(itemId) {
+  const item = itemsById.get(itemId);
+  if (!item) return;
+
+  if (getItemQuantity(itemId) === 0) return;
+
+  let target = null;
+  if (item.isSandwich) {
+    const selectedOptions = readSandwichOptionsFromMenu(itemId);
+    target = state.cartLines.find(
+      (line) =>
+        line.itemId === itemId &&
+        line.note.trim() === '' &&
+        optionsEqual(line.options, selectedOptions),
+    );
+  }
+  if (item.isDrink) {
+    const selectedDrinkType = readDrinkTypeFromMenu(itemId);
+    if (!selectedDrinkType) {
+      setDrinkError(itemId, 'חייב לבחור שתייה');
+      return;
+    }
+    clearDrinkError(itemId);
+    target = state.cartLines.find(
+      (line) =>
+        line.itemId === itemId &&
+        sanitizeDrinkType(line.drinkType) === selectedDrinkType,
+    );
+  }
+
+  if (!target && !item.isDrink) {
+    for (let i = state.cartLines.length - 1; i >= 0; i -= 1) {
+      if (state.cartLines[i].itemId === itemId) {
+        target = state.cartLines[i];
+        break;
+      }
+    }
+  }
+
+  if (!target) return;
+
+  target.quantity -= 1;
+  if (target.quantity <= 0) {
+    state.cartLines = state.cartLines.filter((line) => line.lineId !== target.lineId);
+  }
+
+  saveState();
+  renderCart();
+}
+
+function sanitizeCartLine(line) {
+  if (!line || typeof line !== 'object') return null;
+
+  const item = itemsById.get(line.itemId);
+  if (!item) return null;
+
+  const quantity = Number(line.quantity || 0);
+  if (!Number.isFinite(quantity) || quantity <= 0) return null;
+
+  const baseName =
+    typeof line.baseName === 'string' && line.baseName.trim()
+      ? line.baseName.trim()
+      : item.name;
+  const drinkType = item.isDrink ? sanitizeDrinkType(line.drinkType) : '';
+  if (item.isDrink && !drinkType) return null;
+  const displayName = item.isDrink
+    ? `${baseName} — ${drinkType}`
+    : typeof line.displayName === 'string' && line.displayName.trim()
+      ? line.displayName.trim()
+      : item.name;
+
+  return {
+    lineId: typeof line.lineId === 'string' ? line.lineId : createLineId(),
+    itemId: item.id,
+    name: displayName,
+    baseName,
+    displayName,
+    category: item.isDrink ? DRINK_CATEGORY_LABEL : '',
+    drinkType,
+    basePrice: item.price,
+    quantity: Math.floor(quantity),
+    options: item.isSandwich ? normalizeSandwichOptions(line.options) : null,
+    note: typeof line.note === 'string' ? line.note : '',
+  };
+}
+
+function mergeDuplicateLines() {
+  const merged = [];
+  state.cartLines.forEach((line) => {
+    const duplicate = merged.find(
+      (candidate) =>
+        candidate.itemId === line.itemId &&
+        candidate.note.trim() === line.note.trim() &&
+        optionsEqual(candidate.options, line.options) &&
+        sanitizeDrinkType(candidate.drinkType) === sanitizeDrinkType(line.drinkType),
+    );
+    if (duplicate) {
+      duplicate.quantity += line.quantity;
+    } else {
+      merged.push({ ...line });
+    }
+  });
+  state.cartLines = merged;
+}
+
+function buildCartEntries() {
+  return state.cartLines
+    .map((line) => sanitizeCartLine(line))
+    .filter(Boolean);
+}
+
+function totalFromEntries(entries) {
+  return entries.reduce((sum, entry) => sum + lineTotal(entry), 0);
+}
+
+function optionsSummary(line) {
+  if (!line.options) return '';
+  const options = normalizeSandwichOptions(line.options);
+  const parts = [];
+  if (options.salads.length > 0) parts.push(`סלטים: ${options.salads.join(', ')}`);
+  if (options.sauces.length > 0) parts.push(`רטבים: ${options.sauces.join(', ')}`);
+  if (options.pickles.length > 0) parts.push(`חמוצים: ${options.pickles.join(', ')}`);
+  if (options.paidAddons.length > 0) {
+    const paidText = options.paidAddons
+      .map((addonId) => {
+        const addon = PAID_ADDON_BY_ID.get(addonId);
+        return addon ? `${addon.label} (+${toShekel(addon.price)})` : addonId;
+      })
+      .join(', ');
+    parts.push(`תוספות בתשלום: ${paidText}`);
+  }
+  return parts.join(' | ');
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function getCartItemCount(entries = state.cartLines) {
+  return entries.reduce((sum, entry) => sum + (Number(entry.quantity) || 0), 0);
+}
+
+function updateMobileBadge(itemCount, totalLabel = '') {
+  if (mobileCartBadge) {
+    mobileCartBadge.textContent = String(itemCount);
+    mobileCartBadge.hidden = itemCount === 0;
+  }
+
+  if (mobileCartButton) {
+    const priceLabel = totalLabel ? `, ${totalLabel}` : '';
+    mobileCartButton.setAttribute(
+      'aria-label',
+      `עגלה: ${itemCount} פריטים${priceLabel}`,
+    );
+  }
+}
+
+function renderCart() {
+  const entries = buildCartEntries();
+  state.cartLines = entries;
+  const total = totalFromEntries(entries);
+  const itemCount = getCartItemCount(entries);
+
+  menuNodes.forEach((node) => {
+    const itemId = node.dataset.itemId;
+    const qtyDisplay = document.getElementById(`qty-${itemId}`);
+    if (qtyDisplay) qtyDisplay.textContent = String(getItemQuantity(itemId));
+  });
+
+  cartItemsElement.innerHTML = '';
+  cartEmptyElement.style.display = entries.length === 0 ? 'block' : 'none';
+
+  entries.forEach((entry) => {
+    const unitPrice = lineUnitPrice(entry);
+    const optionSummaryText = optionsSummary(entry);
+    const line = document.createElement('div');
+    line.className = 'cart-item';
+    line.innerHTML = `
+      <div>
+        <div class="cart-item-name">${escapeHtml(entry.name)}</div>
+        <div class="cart-item-meta">${entry.quantity} x ${toShekel(unitPrice)}</div>
+        ${
+          optionSummaryText
+            ? `<div class="cart-item-options">${escapeHtml(optionSummaryText)}</div>`
+            : ''
+        }
+        ${
+          entry.note.trim()
+            ? `<div class="cart-item-note">הערה: ${escapeHtml(entry.note.trim())}</div>`
+            : ''
+        }
+        <button class="line-edit-btn" type="button" data-edit-line-id="${entry.lineId}">עריכה</button>
+      </div>
+      <div class="cart-line-total">${toShekel(lineTotal(entry))}</div>
+    `;
+    cartItemsElement.append(line);
+  });
+
+  const totalLabel = toShekel(total);
+  cartTotalElement.textContent = totalLabel;
+  cartTotalInline.textContent = totalLabel;
+  updateMobileBadge(itemCount, totalLabel);
+  if (mobileCartButton) {
+    mobileCartButton.setAttribute(
+      'aria-label',
+      `עגלה: ${itemCount} פריטים, ${totalLabel}`,
+    );
+  }
+  syncCartReminderForQuantity(itemCount);
+}
+
+function serializeState() {
+  return {
+    cartLines: state.cartLines,
+    name: state.name,
+    phone: state.phone,
+    notes: state.notes,
+    pickup: state.pickup,
+    lastOptions: state.lastOptions,
+    lastDrinkType: state.lastDrinkType,
+  };
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeState()));
+}
+
+function buildOrderStatusUrl(orderId) {
+  const url = new URL('./order.html', window.location.href);
+  url.searchParams.set('id', orderId);
+  return url.toString();
+}
+
+function storeLastOrderId(orderId) {
+  if (!orderId) return;
+  try {
+    localStorage.setItem(LAST_ORDER_ID_KEY, orderId);
+  } catch (error) {
+    console.error('Failed to store last order id', error);
+  }
+}
+
+function readLastOrderId() {
+  try {
+    return localStorage.getItem(LAST_ORDER_ID_KEY) || '';
+  } catch (error) {
+    console.error('Failed to read last order id', error);
+    return '';
+  }
+}
+
+function syncLastOrderLink() {
+  if (!lastOrderLink) return;
+  const lastOrderId = readLastOrderId();
+  if (!lastOrderId) {
+    lastOrderLink.hidden = true;
+    return;
+  }
+  lastOrderLink.href = buildOrderStatusUrl(lastOrderId);
+  lastOrderLink.hidden = false;
+}
+
+function restoreState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return;
+
+  try {
+    const parsed = JSON.parse(raw);
+    state.cartLines = Array.isArray(parsed.cartLines) ? parsed.cartLines : [];
+    state.name = typeof parsed.name === 'string' ? parsed.name : '';
+    state.phone = typeof parsed.phone === 'string' ? parsed.phone : '';
+    state.notes = typeof parsed.notes === 'string' ? parsed.notes : '';
+    state.pickup = typeof parsed.pickup === 'string' ? parsed.pickup : '';
+    state.lastOptions =
+      parsed.lastOptions && typeof parsed.lastOptions === 'object'
+        ? parsed.lastOptions
+        : {};
+    state.lastDrinkType =
+      parsed.lastDrinkType && typeof parsed.lastDrinkType === 'object'
+        ? parsed.lastDrinkType
+        : {};
+  } catch {
+    state.cartLines = [];
+  }
+}
+
+function clearDraftStorage() {
+  const clearFromStore = (store) => {
+    try {
+      store.removeItem(STORAGE_KEY);
+      for (let i = store.length - 1; i >= 0; i -= 1) {
+        const key = store.key(i);
+        if (!key) continue;
+        if (key.startsWith('itziks-cart-order-')) {
+          store.removeItem(key);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to clear draft storage', error);
+    }
+  };
+
+  clearFromStore(localStorage);
+  clearFromStore(sessionStorage);
+}
+
+function resetMenuSelectionsToDefault() {
+  const menuRoot = document.getElementById('menu');
+  if (menuRoot) {
+    menuRoot
+      .querySelectorAll('input[type="checkbox"], input[type="radio"]')
+      .forEach((input) => {
+        input.checked = false;
+      });
+    menuRoot.querySelectorAll('select').forEach((select) => {
+      select.selectedIndex = 0;
+      syncStyledSelect(select);
+    });
+  }
+
+  itemsById.forEach((item) => {
+    if (item.isSandwich) {
+      const defaults = copyOptions(DEFAULT_SANDWICH_OPTIONS);
+      state.lastOptions[item.id] = defaults;
+      const optionsRoot = menuNodeById(item.id)?.querySelector('.shawarma-options');
+      applySandwichSelections(optionsRoot, defaults);
+    }
+    if (item.isDrink) {
+      state.lastDrinkType[item.id] = '';
+      const select = menuNodeById(item.id)?.querySelector('.drink-type-select');
+      if (select) {
+        select.value = '';
+        syncStyledSelect(select);
+      }
+      clearDrinkError(item.id);
+    }
+    updateMenuItemPrice(item.id);
+  });
+}
+
+function resetAllSelections() {
+  if (ui.resetModal.modal) closeModal(ui.resetModal.modal);
+  if (ui.lineEditor.modal) closeModal(ui.lineEditor.modal);
+  if (ui.confirmModal.modal) closeModal(ui.confirmModal.modal);
+  if (ui.drinkChangeModal.modal) closeModal(ui.drinkChangeModal.modal);
+  ui.drinkChangeModal.pending = null;
+
+  state.cartLines = [];
+  state.name = '';
+  state.phone = '';
+  state.notes = '';
+  state.pickup = '';
+  state.lastOptions = {};
+  state.lastDrinkType = {};
+  formErrorElement.textContent = '';
+
+  resetMenuSelectionsToDefault();
+  restoreInputs();
+  refreshPickupOptions();
+  renderCart();
+  clearDraftStorage();
+}
+
+function normalizePhone(phone) {
+  return phone.replace(/[\s\-()]/g, '');
+}
+
+function isValidIsraeliPhone(phone) {
+  const normalized = normalizePhone(phone);
+  return (
+    /^(?:\+972|972|0)(?:[2-4]|[8-9])\d{7}$/.test(normalized) ||
+    /^(?:\+972|972|0)5\d{8}$/.test(normalized)
+  );
+}
+
+function roundUpToQuarter(date) {
+  const rounded = new Date(date);
+  rounded.setSeconds(0, 0);
+  const minutes = rounded.getMinutes();
+  const remainder = minutes % SLOT_STEP_MINUTES;
+  if (remainder !== 0) {
+    rounded.setMinutes(minutes + (SLOT_STEP_MINUTES - remainder));
+  }
+  return rounded;
+}
+
+function hoursForDate(date) {
+  const def = WORKING_HOURS[date.getDay()];
+  if (!def) return null;
+
+  const [openHour, openMinute] = def.open.split(':').map(Number);
+  const [closeHour, closeMinute] = def.close.split(':').map(Number);
+
+  const openTime = new Date(date);
+  openTime.setHours(openHour, openMinute, 0, 0);
+
+  const closeTime = new Date(date);
+  closeTime.setHours(closeHour, closeMinute, 0, 0);
+  if (closeTime <= openTime) {
+    closeTime.setDate(closeTime.getDate() + 1);
+  }
+
+  return { ...def, openTime, closeTime };
+}
+
+function formatTime(date) {
+  return date.toLocaleTimeString('he-IL', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function formatDayAndTime(date) {
+  const weekdays = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'שבת'];
+  return `${weekdays[date.getDay()]} ${formatTime(date)}`;
+}
+
+function nextOpeningDate(fromDate) {
+  const base = new Date(fromDate);
+  for (let offset = 0; offset < 8; offset += 1) {
+    const day = new Date(base);
+    day.setDate(base.getDate() + offset);
+    const schedule = hoursForDate(day);
+    if (!schedule) continue;
+    if (offset === 0 && fromDate < schedule.openTime) {
+      return schedule.openTime;
+    }
+    if (offset > 0) {
+      return schedule.openTime;
+    }
+  }
+  return null;
+}
+
+function generateSlots(startDate, endDate) {
+  const slots = [];
+  let cursor = new Date(startDate);
+  while (cursor <= endDate) {
+    slots.push(new Date(cursor));
+    cursor = new Date(cursor.getTime() + SLOT_STEP_MINUTES * 60 * 1000);
+  }
+  return slots;
+}
+
+function computePickupStatus() {
+  const now = new Date();
+  const minReady = new Date(now.getTime() + PREP_TIME_MINUTES * 60 * 1000);
+  const latestAllowed = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+  const start = roundUpToQuarter(minReady);
+  const end = new Date(latestAllowed);
+
+  if (start > end) {
+    return { canCheckout: false, slots: [], nextOpen: null };
+  }
+
+  const slots = generateSlots(start, end);
+  return { canCheckout: slots.length > 0, slots, nextOpen: null };
+}
+
+function selectedPickupLabel() {
+  const option = pickupSelect.selectedOptions[0];
+  return option ? option.textContent : '';
+}
+
+function refreshPickupOptions() {
+  ui.pickupStatus = computePickupStatus();
+  const { canCheckout, slots } = ui.pickupStatus;
+
+  pickupSelect.innerHTML = '<option value="">בחרו שעה</option>';
+  slots.forEach((slot) => {
+    const option = document.createElement('option');
+    option.value = slot.toISOString();
+    option.textContent = formatDayAndTime(slot);
+    pickupSelect.append(option);
+  });
+
+  if (
+    state.pickup &&
+    slots.some((slot) => slot.toISOString() === state.pickup)
+  ) {
+    pickupSelect.value = state.pickup;
+  } else {
+    state.pickup = '';
+  }
+
+  if (canCheckout) {
+    pickupSelect.disabled = false;
+    pickupHint.textContent = `${ORDERING_HOURS_LABEL}. זמני איסוף זמינים ב־15 דקות קדימה (עד שעתיים).`;
+  } else {
+    pickupSelect.disabled = true;
+    pickupHint.textContent = CLOSED_ORDERING_MESSAGE;
+  }
+
+  rebuildStyledSelectOptions(pickupSelect);
+  sendOrderButton.disabled = !canCheckout;
+  saveState();
+}
+
+function isPickupValidNow(value) {
+  if (!value) return false;
+  const pickup = new Date(value);
+  if (Number.isNaN(pickup.getTime())) return false;
+
+  const now = new Date();
+  const minReady = new Date(now.getTime() + PREP_TIME_MINUTES * 60 * 1000);
+  const latestAllowed = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+  return pickup >= minReady && pickup <= latestAllowed;
+}
+
+function validateOrder() {
+  const entries = buildCartEntries();
+  if (entries.length === 0) return 'העגלה ריקה. הוסיפו לפחות פריט אחד.';
+
+  if (!state.name.trim()) return 'יש להזין שם.';
+  if (!isValidIsraeliPhone(state.phone)) return 'יש להזין מספר טלפון ישראלי תקין.';
+
+  if (!ui.pickupStatus.canCheckout) {
+    return CLOSED_ORDERING_MESSAGE;
+  }
+
+  if (!state.pickup) return 'יש לבחור שעת איסוף.';
+  if (!isPickupValidNow(state.pickup)) {
+    refreshPickupOptions();
+    return 'שעת האיסוף אינה זמינה. בחרו שעה חדשה.';
+  }
+
+  return '';
+}
+
+function buildItemModifiers(line) {
+  if (line.drinkType) {
+    return { drinkType: line.drinkType };
+  }
+  if (!line.options) return {};
+
+  const options = normalizeSandwichOptions(line.options);
+  return {
+    salads: [...options.salads],
+    sauces: [...options.sauces],
+    pickles: [...options.pickles],
+    paidAddons: options.paidAddons
+      .map((addonId) => PAID_ADDON_BY_ID.get(addonId))
+      .filter(Boolean)
+      .map((addon) => ({ id: addon.id, label: addon.label, price: addon.price })),
+  };
+}
+
+function buildFirestoreOrderPayload(entries, total) {
+  const pickup = { time: state.pickup };
+  const pickupLabel = selectedPickupLabel();
+  if (pickupLabel) {
+    pickup.dayLabel = pickupLabel;
+  }
+
+  return {
+    createdAt: serverTimestamp(),
+    status: 'new',
+    deliveryConfirmed: null,
+    deliveryConfirmedAt: null,
+    deliveryConfirmNote: '',
+    unreadForBusinessCount: 0,
+    unreadForCustomerCount: 0,
+    lastMessageAt: null,
+    lastMessagePreview: '',
+    adminReplies: [],
+    lastAdminReplyAt: null,
+    customer: {
+      name: state.name.trim(),
+      phone: state.phone.trim(),
+    },
+    customerName: state.name.trim(),
+    customerPhone: state.phone.trim(),
+    phone: state.phone.trim(),
+    pickup,
+    items: entries.map((line) => {
+      const unitPrice = lineUnitPrice(line);
+      return {
+        id: line.itemId,
+        name: line.displayName || line.name,
+        category: line.category || '',
+        baseName: line.baseName || line.name,
+        drinkType: line.drinkType || '',
+        displayName: line.displayName || line.name,
+        qty: line.quantity,
+        basePrice: line.basePrice,
+        modifiers: buildItemModifiers(line),
+        unitPrice,
+        lineTotal: lineTotal(line),
+      };
+    }),
+    total,
+    notes: state.notes.trim(),
+  };
+}
+
+async function saveOrderToFirestore(payload) {
+  if (!db) {
+    throw new Error('Firebase initialization failed: Firestore db is undefined.');
+  }
+
+  const docRef = await addDoc(collection(db, 'orders'), payload);
+  console.log('Order saved to Firestore with id:', docRef.id);
+  return docRef;
+}
+
+function openModal(modal) {
+  modal.classList.add('show');
+  modal.removeAttribute('hidden');
+}
+
+function closeModal(modal) {
+  modal.classList.remove('show');
+  modal.setAttribute('hidden', '');
+}
+
+function buildLineEditorModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'lineEditModal';
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="lineEditTitle">
+      <h3 id="lineEditTitle">עריכת פריט</h3>
+      <div id="lineEditFields"></div>
+      <label for="lineEditNote">הערה לפריט</label>
+      <textarea id="lineEditNote" placeholder="בלי בצל / בלי חריף / טחינה בצד..."></textarea>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="lineEditCancel">ביטול</button>
+        <button type="button" class="btn" id="lineEditSave">שמירה</button>
+      </div>
+    </div>
+  `;
+  document.body.append(modal);
+
+  ui.lineEditor.modal = modal;
+  ui.lineEditor.content = modal.querySelector('#lineEditFields');
+  ui.lineEditor.noteInput = modal.querySelector('#lineEditNote');
+  ui.lineEditor.cancelButton = modal.querySelector('#lineEditCancel');
+  ui.lineEditor.saveButton = modal.querySelector('#lineEditSave');
+
+  ui.lineEditor.cancelButton.addEventListener('click', () => closeModal(modal));
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) closeModal(modal);
+  });
+}
+
+function buildConfirmModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'confirmModal';
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="modal-card modal-card-wide" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <h3 id="confirmTitle">אישור הזמנה</h3>
+      <div id="confirmContent"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="confirmBack">חזרה לעריכה</button>
+        <button type="button" class="btn" id="confirmSend">שלח הזמנה</button>
+      </div>
+    </div>
+  `;
+  document.body.append(modal);
+
+  ui.confirmModal.modal = modal;
+  ui.confirmModal.content = modal.querySelector('#confirmContent');
+  ui.confirmModal.backButton = modal.querySelector('#confirmBack');
+  ui.confirmModal.sendButton = modal.querySelector('#confirmSend');
+
+  ui.confirmModal.backButton.addEventListener('click', () => closeModal(modal));
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) closeModal(modal);
+  });
+}
+
+function buildResetAllModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'resetAllModal';
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="resetAllTitle">
+      <h3 id="resetAllTitle">לאפס את כל הבחירות?</h3>
+      <p class="reset-modal-text">זה ימחק את כל הפריטים והבחירות שביצעת.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="resetAllConfirm">כן, אפס</button>
+        <button type="button" class="btn secondary" id="resetAllCancel">ביטול</button>
+      </div>
+    </div>
+  `;
+  document.body.append(modal);
+
+  ui.resetModal.modal = modal;
+  ui.resetModal.confirmButton = modal.querySelector('#resetAllConfirm');
+  ui.resetModal.cancelButton = modal.querySelector('#resetAllCancel');
+
+  ui.resetModal.cancelButton.addEventListener('click', () => closeModal(modal));
+  ui.resetModal.confirmButton.addEventListener('click', resetAllSelections);
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) closeModal(modal);
+  });
+}
+
+function openResetAllConfirmation() {
+  formErrorElement.textContent = '';
+  openModal(ui.resetModal.modal);
+}
+
+function buildDrinkChangeModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'drinkChangeModal';
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="drinkChangeTitle">
+      <h3 id="drinkChangeTitle">לשנות שתייה?</h3>
+      <p class="reset-modal-text">יש לך כבר כמות. לשנות את הבחירה יאפס את הכמות לפריט הזה.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="drinkChangeConfirm">שנה</button>
+        <button type="button" class="btn secondary" id="drinkChangeCancel">ביטול</button>
+      </div>
+    </div>
+  `;
+  document.body.append(modal);
+
+  ui.drinkChangeModal.modal = modal;
+  ui.drinkChangeModal.confirmButton = modal.querySelector('#drinkChangeConfirm');
+  ui.drinkChangeModal.cancelButton = modal.querySelector('#drinkChangeCancel');
+
+  ui.drinkChangeModal.cancelButton.addEventListener(
+    'click',
+    cancelPendingDrinkTypeChange,
+  );
+  ui.drinkChangeModal.confirmButton.addEventListener(
+    'click',
+    applyPendingDrinkTypeChange,
+  );
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) cancelPendingDrinkTypeChange();
+  });
+}
+
+function renderDrinkSubmitOptions() {
+  const optionsRoot = ui.drinkSubmitModal.optionsRoot;
+  if (!optionsRoot) return;
+
+  const choices = resolvePreSubmitDrinkChoices();
+  optionsRoot.innerHTML = '';
+
+  choices.forEach((option) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'drink-submit-option';
+    button.dataset.drinkType = option.value;
+    button.textContent = option.label;
+    button.addEventListener('click', () => {
+      handleDrinkSubmitAddDecision(option.value);
+    });
+    optionsRoot.append(button);
+  });
+}
+
+function buildDrinkSubmitModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay drink-submit-modal';
+  modal.id = 'drinkSubmitModal';
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="modal-card drink-submit-card" role="dialog" aria-modal="true" aria-labelledby="drinkSubmitTitle">
+      <button type="button" class="drink-submit-close" id="drinkSubmitClose" aria-label="סגירה">
+        &times;
+      </button>
+
+      <div id="drinkSubmitPromptStep">
+        <h3 id="drinkSubmitTitle">רגע לפני ששולחים…</h3>
+        <p class="drink-submit-body">רוצה להוסיף שתייה להזמנה?</p>
+        <div class="modal-actions drink-submit-actions">
+          <button type="button" class="btn" id="drinkSubmitYes">כן, תוסיף שתייה</button>
+          <button type="button" class="btn secondary" id="drinkSubmitNo">לא, שלח ככה</button>
+        </div>
+      </div>
+
+      <div id="drinkSubmitChooserStep" hidden>
+        <h3>בחרו שתייה</h3>
+        <p class="drink-submit-body">השתייה תתווסף לעגלה ב־12₪ וההזמנה תישלח מיד.</p>
+        <div class="drink-submit-options" id="drinkSubmitOptions"></div>
+        <div class="modal-actions drink-submit-actions">
+          <button type="button" class="btn secondary" id="drinkSubmitBack">חזרה</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.append(modal);
+
+  const modalState = ui.drinkSubmitModal;
+  modalState.modal = modal;
+  modalState.closeButton = modal.querySelector('#drinkSubmitClose');
+  modalState.yesButton = modal.querySelector('#drinkSubmitYes');
+  modalState.noButton = modal.querySelector('#drinkSubmitNo');
+  modalState.backButton = modal.querySelector('#drinkSubmitBack');
+  modalState.promptStep = modal.querySelector('#drinkSubmitPromptStep');
+  modalState.chooserStep = modal.querySelector('#drinkSubmitChooserStep');
+  modalState.optionsRoot = modal.querySelector('#drinkSubmitOptions');
+
+  renderDrinkSubmitOptions();
+
+  modalState.closeButton?.addEventListener('click', handleDrinkSubmitSkip);
+  modalState.noButton?.addEventListener('click', handleDrinkSubmitSkip);
+  modalState.yesButton?.addEventListener('click', () => {
+    showDrinkSubmitChooserStep();
+    const firstChoice = modalState.optionsRoot?.querySelector('button');
+    firstChoice?.focus({ preventScroll: true });
+  });
+  modalState.backButton?.addEventListener('click', () => {
+    showDrinkSubmitPromptStep();
+    modalState.yesButton?.focus({ preventScroll: true });
+  });
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) {
+      // Intentionally do nothing on backdrop click.
+    }
+  });
+}
+
+function buildCartReminderModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay cart-reminder-modal';
+  modal.id = 'cartReminderModal';
+  modal.hidden = true;
+  modal.innerHTML = `
+    <div class="modal-card cart-reminder-card" role="dialog" aria-modal="true" aria-labelledby="cartReminderTitle">
+      <h3 id="cartReminderTitle">ההזמנה שלך מחכה 👀</h3>
+      <div class="modal-actions cart-reminder-actions">
+        <button type="button" class="btn secondary" id="cartReminderContinueBtn">להמשיך להזמין</button>
+        <button type="button" class="btn" id="cartReminderOpenCartBtn">לעבור לעגלה</button>
+      </div>
+    </div>
+  `;
+  document.body.append(modal);
+
+  const modalState = ui.cartReminderModal;
+  modalState.modal = modal;
+  modalState.continueButton = modal.querySelector('#cartReminderContinueBtn');
+  modalState.goToCartButton = modal.querySelector('#cartReminderOpenCartBtn');
+
+  modalState.continueButton?.addEventListener('click', () => {
+    closeCartReminderModal();
+  });
+  modalState.goToCartButton?.addEventListener('click', () => {
+    openCartFromReminder();
+  });
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) {
+      closeCartReminderModal();
+    }
+  });
+}
+
+function openLineEditor(lineId) {
+  const line = state.cartLines.find((entry) => entry.lineId === lineId);
+  if (!line) return;
+
+  ui.lineEditor.editingLineId = lineId;
+  ui.lineEditor.noteInput.value = line.note;
+  ui.lineEditor.content.innerHTML = '';
+
+  if (isSandwichItem(line.itemId)) {
+    const options = normalizeSandwichOptions(line.options);
+    ui.lineEditor.content.innerHTML = `
+      <div class="shawarma-options modal-options-grid">
+        ${renderOptionGroup({
+          title: 'סלטים',
+          hint: 'בחרו כמה שתרצו',
+          groupKey: 'salads',
+          groupClass: 'salad-choice',
+          options: SALAD_OPTIONS,
+          selectedValues: options.salads,
+          includeAllOption: true,
+        })}
+        ${renderOptionGroup({
+          title: 'רטבים',
+          hint: 'בחרו כמה שתרצו',
+          groupKey: 'sauces',
+          groupClass: 'sauce-choice',
+          options: SAUCE_OPTIONS,
+          selectedValues: options.sauces,
+          includeAllOption: true,
+        })}
+        ${renderOptionGroup({
+          title: 'חמוצים',
+          hint: 'בחרו כמה שתרצו',
+          groupKey: 'pickles',
+          groupClass: 'pickle-choice',
+          options: PICKLE_OPTIONS,
+          selectedValues: options.pickles,
+          includeAllOption: true,
+        })}
+        ${renderOptionGroup({
+          title: 'תוספות בתשלום',
+          hint: 'בחירה תשפיע על המחיר',
+          groupKey: 'paidAddons',
+          groupClass: 'paid-addon',
+          options: PAID_ADDONS,
+          selectedValues: options.paidAddons,
+          withPrice: true,
+        })}
+      </div>
+    `;
+    initGroupAllBehavior(ui.lineEditor.content.querySelector('.shawarma-options'));
+  } else {
+    ui.lineEditor.content.innerHTML =
+      '<p class="field-hint">לפריט זה אין אפשרויות נוספות. ניתן לעדכן הערה בלבד.</p>';
+  }
+
+  openModal(ui.lineEditor.modal);
+}
+
+function saveLineEditor() {
+  const line = state.cartLines.find(
+    (entry) => entry.lineId === ui.lineEditor.editingLineId,
+  );
+  if (!line) return;
+
+  if (isSandwichItem(line.itemId)) {
+    line.options = readSandwichOptionsFromRoot(ui.lineEditor.content);
+    state.lastOptions[line.itemId] = copyOptions(line.options);
+    const menuEditor = menuNodeById(line.itemId)?.querySelector('.shawarma-options');
+    if (menuEditor) {
+      applySandwichSelections(menuEditor, line.options);
+      updateMenuItemPrice(line.itemId);
+    }
+  }
+
+  line.note = ui.lineEditor.noteInput.value || '';
+  mergeDuplicateLines();
+  saveState();
+  renderCart();
+  closeModal(ui.lineEditor.modal);
+}
+
+function renderConfirmContent(entries, total) {
+  const pickup = selectedPickupLabel();
+  const customerNote = state.notes.trim() ? state.notes.trim() : 'ללא';
+  const summaryRows = entries
+    .map((line) => {
+      const unit = lineUnitPrice(line);
+      const optionSummaryText = optionsSummary(line);
+      const optionBlock = optionSummaryText
+        ? `<div class="confirm-subline">${escapeHtml(optionSummaryText)}</div>`
+        : '';
+      const noteBlock = line.note.trim()
+        ? `<div class="confirm-subline">הערה לפריט: ${escapeHtml(line.note.trim())}</div>`
+        : '';
+      return `
+        <div class="confirm-line">
+          <div>
+            <strong>${escapeHtml(line.name)}</strong>
+            <div>${line.quantity} x ${toShekel(unit)}</div>
+            ${optionBlock}
+            ${noteBlock}
+          </div>
+          <div>${toShekel(lineTotal(line))}</div>
+        </div>
+      `;
+    })
+    .join('');
+
+  ui.confirmModal.content.innerHTML = `
+    <div class="confirm-lines">${summaryRows}</div>
+    <div class="cart-summary"><span>סה"כ</span><strong>${toShekel(total)}</strong></div>
+    <div class="confirm-meta">
+      <div><strong>שעת איסוף:</strong> ${escapeHtml(pickup)}</div>
+      <div><strong>שם:</strong> ${escapeHtml(state.name.trim())}</div>
+      <div><strong>טלפון:</strong> ${escapeHtml(state.phone.trim())}</div>
+      <div><strong>הערות כלליות:</strong> ${escapeHtml(customerNote)}</div>
+    </div>
+  `;
+}
+
+function openCheckoutConfirmation() {
+  formErrorElement.textContent = '';
+
+  const validationError = validateOrder();
+  if (validationError) {
+    formErrorElement.textContent = validationError;
+    openMobileCart();
+    return;
+  }
+
+  const entries = buildCartEntries();
+  const total = totalFromEntries(entries);
+  renderConfirmContent(entries, total);
+  closeMobileCart();
+  openModal(ui.confirmModal.modal);
+}
+
+async function submitOrderFromConfirm() {
+  const validationError = validateOrder();
+  if (validationError) {
+    formErrorElement.textContent = validationError;
+    closeModal(ui.confirmModal.modal);
+    openMobileCart();
+    return;
+  }
+
+  const entries = buildCartEntries();
+  const total = totalFromEntries(entries);
+  const orderPayload = buildFirestoreOrderPayload(entries, total);
+
+  const resetCheckoutAfterSuccess = () => {
+    state.cartLines = [];
+    state.name = '';
+    state.phone = '';
+    state.notes = '';
+    state.pickup = '';
+    formErrorElement.textContent = '';
+    restoreInputs();
+    refreshPickupOptions();
+    renderCart();
+    saveState();
+  };
+
+  ui.confirmModal.sendButton.disabled = true;
+  ui.confirmModal.backButton.disabled = true;
+  sendOrderButton.disabled = true;
+
+  try {
+    const orderRef = await saveOrderToFirestore(orderPayload);
+    markCartReminderOrderSubmitted();
+    const orderId = orderRef?.id;
+    if (orderId) {
+      storeLastOrderId(orderId);
+      syncLastOrderLink();
+    }
+    formErrorElement.textContent = '';
+    closeModal(ui.confirmModal.modal);
+    resetCheckoutAfterSuccess();
+    showToast('הזמנה נשלחה ✅', 1200);
+    if (orderId) {
+      window.setTimeout(() => {
+        window.location.href = buildOrderStatusUrl(orderId);
+      }, 450);
+    }
+  } catch (error) {
+    console.error('Failed to save order to Firestore', {
+      error,
+      message: error?.message,
+      stack: error?.stack,
+      payload: orderPayload,
+    });
+    const warningMessage = 'שגיאה בשליחת ההזמנה. נסו שוב בעוד רגע.';
+    closeModal(ui.confirmModal.modal);
+    openMobileCart();
+    formErrorElement.textContent = warningMessage;
+    showToast(warningMessage, 4000);
+  } finally {
+    ui.confirmModal.sendButton.disabled = false;
+    ui.confirmModal.backButton.disabled = false;
+    refreshPickupOptions();
+  }
+}
+
+function initExistingInteractions() {
+  document.querySelectorAll('a[href^="#"]').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      const targetId = link.getAttribute('href');
+      if (!targetId || targetId.length === 1) return;
+      const target = document.querySelector(targetId);
+      if (!target) return;
+
+      event.preventDefault();
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  window.addEventListener('scroll', () => {
+    if (window.scrollY > 400) {
+      backToTop.classList.add('show');
+    } else {
+      backToTop.classList.remove('show');
+    }
+  });
+
+  backToTop.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  copyPhone.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(PHONE);
+      showToast(defaultToastMessage, 1600);
+    } catch {
+      showToast('ההעתקה נכשלה', 1600);
+    }
+  });
+}
+
+function initItems() {
+  menuNodes.forEach((node) => {
+    const item = parseItemData(node);
+    if (!item) return;
+    itemsById.set(item.id, item);
+  });
+
+  state.cartLines = state.cartLines.map((line) => sanitizeCartLine(line)).filter(Boolean);
+  mergeDuplicateLines();
+
+  itemsById.forEach((item) => {
+    if (item.isSandwich && !state.lastOptions[item.id]) {
+      state.lastOptions[item.id] = copyOptions(DEFAULT_SANDWICH_OPTIONS);
+    }
+    if (item.isDrink && typeof state.lastDrinkType[item.id] !== 'string') {
+      state.lastDrinkType[item.id] = '';
+    }
+    attachControlsToMenuItem(item);
+    updateMenuItemPrice(item.id);
+  });
+}
+
+function bindFormEvents() {
+  pickupSelect.addEventListener('change', () => {
+    state.pickup = pickupSelect.value;
+    formErrorElement.textContent = '';
+    saveState();
+  });
+
+  customerNameInput.addEventListener('input', () => {
+    state.name = customerNameInput.value;
+    saveState();
+  });
+
+  customerPhoneInput.addEventListener('input', () => {
+    state.phone = customerPhoneInput.value;
+    saveState();
+  });
+
+  customerNotesInput.addEventListener('input', () => {
+    state.notes = customerNotesInput.value;
+    saveState();
+  });
+
+  clearCartButton.addEventListener('click', () => {
+    state.cartLines = [];
+    formErrorElement.textContent = '';
+    saveState();
+    renderCart();
+  });
+  resetAllButton?.addEventListener('click', openResetAllConfirmation);
+
+  sendOrderButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    handleOrderSubmitIntent();
+  });
+  if (orderFormElement?.tagName === 'FORM') {
+    orderFormElement.addEventListener('submit', (event) => {
+      event.preventDefault();
+      handleOrderSubmitIntent();
+    });
+  }
+
+  mobileCartButton?.addEventListener('click', () => {
+    if (cartPanel.classList.contains('open')) {
+      closeMobileCart();
+    } else {
+      openMobileCart();
+    }
+  });
+  mobileCartCloseButton?.addEventListener('click', () => closeMobileCart());
+  mobileCartBackdrop?.addEventListener('click', closeMobileCart);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && isCartReminderModalOpen()) {
+      closeCartReminderModal();
+      return;
+    }
+    if (event.key === 'Escape' && isDrinkSubmitModalOpen()) {
+      handleDrinkSubmitSkip();
+      return;
+    }
+    if (event.key === 'Escape' && cartPanel.classList.contains('open')) {
+      closeMobileCart();
+      return;
+    }
+    if (event.key === 'Escape' && isSupportChatOpen()) {
+      closeSupportChatModal();
+    }
+  });
+
+  cartItemsElement.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-edit-line-id]');
+    if (!button) return;
+    openLineEditor(button.dataset.editLineId);
+  });
+
+  ui.lineEditor.saveButton.addEventListener('click', saveLineEditor);
+  ui.confirmModal.sendButton.addEventListener('click', submitOrderFromConfirm);
+}
+
+function restoreInputs() {
+  customerNameInput.value = state.name;
+  customerPhoneInput.value = state.phone;
+  customerNotesInput.value = state.notes;
+}
+
+function init() {
+  ensureMobileCartElements();
+  if (isMobileViewport()) {
+    console.log('[mobile cart] initialized', {
+      matches: isMobileViewport(),
+      btn: !!mobileCartButton,
+    });
+  }
+  restoreState();
+  syncLastOrderLink();
+  buildLineEditorModal();
+  buildConfirmModal();
+  buildResetAllModal();
+  buildDrinkChangeModal();
+  buildDrinkSubmitModal();
+  buildCartReminderModal();
+  bindSupportChatUiEvents();
+  bootstrapSupportChat().catch((error) => {
+    console.error('Failed to bootstrap support chat', error);
+    if (supportChatButton) supportChatButton.disabled = true;
+  });
+  initItems();
+  initCartReminder();
+  initStyledSelect(pickupSelect);
+  restoreInputs();
+  refreshPickupOptions();
+  syncViewportUi();
+  if (typeof mobileViewportQuery.addEventListener === 'function') {
+    mobileViewportQuery.addEventListener('change', syncViewportUi);
+    mobileTouchQuery.addEventListener('change', syncViewportUi);
+  } else if (typeof mobileViewportQuery.addListener === 'function') {
+    mobileViewportQuery.addListener(syncViewportUi);
+    mobileTouchQuery.addListener(syncViewportUi);
+  }
+  bindFormEvents();
+  renderCart();
+  initExistingInteractions();
+  window.addEventListener('beforeunload', () => {
+    stopSupportChatListeners();
+  });
+  saveState();
+}
+
+init();
