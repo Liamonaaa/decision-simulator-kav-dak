@@ -14,7 +14,6 @@ import {
   writeBatch,
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
 import { db } from "./src/firebase.js";
-import { PRODUCT_OPTION_GROUPS_CONFIG } from './product-options-config.js';
 
 // עריכת שעות פעילות: 0=א', 1=ב', ... , 6=שבת
 const WORKING_HOURS = {
@@ -158,19 +157,12 @@ const PAID_ADDONS = [
 ];
 const PAID_ADDON_IDS = new Set(PAID_ADDONS.map((addon) => addon.id));
 const PAID_ADDON_BY_ID = new Map(PAID_ADDONS.map((addon) => [addon.id, addon]));
-const SPICE_LEVEL_OPTIONS = ['עדין', 'בינוני', 'חריף'];
-const SPICE_LEVEL_SET = new Set(SPICE_LEVEL_OPTIONS);
-const PRODUCT_OPTION_GROUPS = PRODUCT_OPTION_GROUPS_CONFIG;
-const DRINK_TYPE_GROUP_ID = 'drinkType';
-const GROUP_MULTI = 'multi';
-const GROUP_SINGLE = 'single';
 
 const DEFAULT_SANDWICH_OPTIONS = {
   salads: [],
   sauces: [],
   pickles: [],
   paidAddons: [],
-  spiceLevel: '',
 };
 
 const menuNodes = Array.from(document.querySelectorAll('#menu [data-item-id]'));
@@ -231,7 +223,6 @@ const state = {
   pickup: '',
   lastOptions: {},
   lastDrinkType: {},
-  lastCustomization: {},
 };
 
 const ui = {
@@ -279,25 +270,6 @@ const ui = {
     goToCartButton: null,
     lastFocused: null,
   },
-  productCustomizer: {
-    modal: null,
-    closeButton: null,
-    title: null,
-    image: null,
-    sections: null,
-    noteInput: null,
-    quantityDisplay: null,
-    qtyMinusButton: null,
-    qtyPlusButton: null,
-    totalLabel: null,
-    submitButton: null,
-    activeItemId: null,
-    activeLineId: null,
-    mode: 'add',
-    quantity: 1,
-    selectionMap: {},
-    optionGroups: [],
-  },
 };
 
 let customSelectGlobalBound = false;
@@ -320,8 +292,6 @@ let cartReminderShown = false;
 let cartReminderOrderSubmitted = false;
 let cartReminderPendingVisibility = false;
 let buildVersionMarker = null;
-let customizerLockedScrollY = 0;
-let customizerLastFocused = null;
 const BUILD_VERSION = '20260228-16';
 const defaultToastMessage = toast?.textContent || '';
 const MOBILE_BREAKPOINT = 900;
@@ -1409,43 +1379,42 @@ function addDrinkFromPreSubmitPrompt(drinkType) {
   if (hasDrinkInCart()) return true;
 
   const itemId = DRINK_UPSELL_ITEM_ID;
+  const drinkMenuSelect = menuNodeById(itemId)?.querySelector('.drink-type-select');
+  if (drinkMenuSelect) {
+    drinkMenuSelect.value = safeDrinkType;
+    syncStyledSelect(drinkMenuSelect);
+    clearDrinkError(itemId);
+  }
+  state.lastDrinkType[itemId] = safeDrinkType;
+
+  if (drinkMenuSelect) {
+    addItemFromMenu(itemId);
+    return true;
+  }
+
   const item = itemsById.get(itemId);
   if (!item) return false;
 
-  const groups = cloneOptionGroups(itemId);
-  const selectedOptionIds = normalizeSelectionMapForGroups(
-    { [DRINK_TYPE_GROUP_ID]: [safeDrinkType] },
-    groups,
-  );
-  const selectedOptions = buildSelectedOptionsFromSelectionMap(groups, selectedOptionIds);
-  const signature = selectionMapSignature(selectedOptionIds, groups);
-  persistLastCustomization(itemId, selectedOptionIds);
-
-  const existing = state.cartLines.find(
-    (line) =>
-      line.itemId === itemId &&
-      line.note.trim() === '' &&
-      lineSelectionSignature(line) === signature &&
-      sanitizeDrinkType(line.drinkType) === safeDrinkType,
-  );
+  const existing = findMatchingEditableLine(itemId, null, safeDrinkType);
+  const displayName = `${item.name} — ${safeDrinkType}`;
   if (existing) {
     existing.quantity += 1;
   } else {
-    state.cartLines.push(normalizeCartLineForState({
+    state.cartLines.push({
       lineId: createLineId(),
       itemId: item.id,
-      name: item.name,
+      name: displayName,
       baseName: item.name,
-      displayName: item.name,
+      displayName,
       category: DRINK_CATEGORY_LABEL,
       drinkType: safeDrinkType,
       basePrice: item.price,
       quantity: 1,
       options: null,
-      selectedOptionIds,
-      selectedOptions,
       note: '',
-    }));
+      isDrink: true,
+      type: 'drink',
+    });
   }
   saveState();
   renderCart();
@@ -1656,199 +1625,6 @@ function clearDrinkError(itemId) {
   setDrinkError(itemId, '');
 }
 
-function cloneOptionGroups(itemId) {
-  const source = PRODUCT_OPTION_GROUPS[itemId];
-  if (!Array.isArray(source)) return [];
-  return source.map((group) => ({
-    ...group,
-    items: Array.isArray(group.items)
-      ? group.items.map((item) => ({ ...item }))
-      : [],
-  }));
-}
-
-function groupSelectionLimits(group) {
-  if (!group || typeof group !== 'object') return { min: 0, max: Infinity };
-  if (group.type === GROUP_SINGLE) {
-    return { min: group.required ? 1 : 0, max: 1 };
-  }
-  const min = Number.isFinite(group.min) ? Math.max(0, Number(group.min)) : (group.required ? 1 : 0);
-  const max = Number.isFinite(group.max) && Number(group.max) > 0
-    ? Number(group.max)
-    : Infinity;
-  return { min, max };
-}
-
-function defaultSelectionMapFromGroups(groups) {
-  const map = {};
-  groups.forEach((group) => {
-    const defaults = (group.items || [])
-      .filter((item) => item.defaultSelected)
-      .map((item) => String(item.id));
-    const { max } = groupSelectionLimits(group);
-    if (group.type === GROUP_SINGLE) {
-      map[group.id] = defaults.length > 0 ? [defaults[0]] : [];
-      return;
-    }
-    map[group.id] = defaults.slice(0, Number.isFinite(max) ? max : defaults.length);
-  });
-  return map;
-}
-
-function normalizeSelectionMapForGroups(selectionMap, groups) {
-  const raw = selectionMap && typeof selectionMap === 'object' ? selectionMap : {};
-  const normalized = {};
-
-  groups.forEach((group) => {
-    const allowedIds = new Set((group.items || []).map((item) => String(item.id)));
-    const values = Array.isArray(raw[group.id]) ? raw[group.id] : [];
-    const uniqueValues = [];
-    values.forEach((value) => {
-      const safeValue = String(value);
-      if (!allowedIds.has(safeValue)) return;
-      if (!uniqueValues.includes(safeValue)) uniqueValues.push(safeValue);
-    });
-
-    const { max } = groupSelectionLimits(group);
-    const limitedValues = Number.isFinite(max)
-      ? uniqueValues.slice(0, max)
-      : uniqueValues;
-    normalized[group.id] = group.type === GROUP_SINGLE
-      ? limitedValues.slice(0, 1)
-      : limitedValues;
-  });
-
-  return normalized;
-}
-
-function optionGroupsById(groups) {
-  const map = new Map();
-  groups.forEach((group) => {
-    map.set(group.id, group);
-  });
-  return map;
-}
-
-function selectionMapFromLegacyOptions(options) {
-  const normalized = normalizeSandwichOptions(options);
-  return {
-    salads: [...normalized.salads],
-    sauces: [...normalized.sauces],
-    pickles: [...normalized.pickles],
-    extras: [...normalized.paidAddons],
-    spiceLevel: normalized.spiceLevel ? [normalized.spiceLevel] : [],
-  };
-}
-
-function selectionMapFromLine(line, groups) {
-  const fromLine = line?.selectedOptionIds && typeof line.selectedOptionIds === 'object'
-    ? line.selectedOptionIds
-    : null;
-
-  if (fromLine) {
-    return normalizeSelectionMapForGroups(fromLine, groups);
-  }
-
-  if (line?.options && typeof line.options === 'object') {
-    return normalizeSelectionMapForGroups(selectionMapFromLegacyOptions(line.options), groups);
-  }
-
-  if (line?.drinkType) {
-    return normalizeSelectionMapForGroups({ [DRINK_TYPE_GROUP_ID]: [line.drinkType] }, groups);
-  }
-
-  return normalizeSelectionMapForGroups({}, groups);
-}
-
-function selectionMapToLegacyOptions(selectionMap) {
-  return normalizeSandwichOptions({
-    salads: selectionMap.salads || [],
-    sauces: selectionMap.sauces || [],
-    pickles: selectionMap.pickles || [],
-    paidAddons: selectionMap.extras || [],
-    spiceLevel: Array.isArray(selectionMap.spiceLevel) ? (selectionMap.spiceLevel[0] || '') : '',
-  });
-}
-
-function buildSelectedOptionsFromSelectionMap(groups, selectionMap) {
-  return groups
-    .map((group) => {
-      const selectedIds = Array.isArray(selectionMap[group.id]) ? selectionMap[group.id] : [];
-      if (selectedIds.length === 0) return null;
-      const selectedItems = selectedIds
-        .map((itemId) => group.items.find((candidate) => candidate.id === itemId))
-        .filter(Boolean)
-        .map((item) => ({
-          id: item.id,
-          labelHe: item.labelHe,
-          priceDelta: Number(item.priceDelta || 0),
-        }));
-      if (selectedItems.length === 0) return null;
-      return {
-        groupId: group.id,
-        groupTitleHe: group.titleHe,
-        selectedItems,
-      };
-    })
-    .filter(Boolean);
-}
-
-function selectionMapSignature(selectionMap, groups) {
-  return groups
-    .map((group) => {
-      const values = Array.isArray(selectionMap[group.id]) ? [...selectionMap[group.id]] : [];
-      values.sort((a, b) => String(a).localeCompare(String(b), 'he'));
-      return `${group.id}:${values.join(',')}`;
-    })
-    .join('|');
-}
-
-function groupHelperText(group) {
-  const { min, max } = groupSelectionLimits(group);
-  if (group.type === GROUP_SINGLE && min >= 1) return 'חובה לבחור אפשרות אחת';
-  if (group.type === GROUP_SINGLE) return 'בחירה אופציונלית';
-  if (min >= 1 && Number.isFinite(max) && min === max) return `חובה לבחור ${min}`;
-  if (min >= 1 && Number.isFinite(max)) return `בחרו ${min}-${max}`;
-  if (min >= 1) return `חובה לבחור לפחות ${min}`;
-  if (Number.isFinite(max)) return `בחרו עד ${max}`;
-  return 'בחרו כמה שתרצו';
-}
-
-function validateSelectionMap(selectionMap, groups) {
-  const errors = {};
-  groups.forEach((group) => {
-    const selected = Array.isArray(selectionMap[group.id]) ? selectionMap[group.id] : [];
-    const count = selected.length;
-    const { min, max } = groupSelectionLimits(group);
-
-    if (count < min) {
-      errors[group.id] = min === 1 ? 'חובה לבחור 1' : `חובה לבחור לפחות ${min}`;
-      return;
-    }
-    if (Number.isFinite(max) && count > max) {
-      errors[group.id] = `בחרו עד ${max}`;
-    }
-  });
-  return {
-    isValid: Object.keys(errors).length === 0,
-    errors,
-  };
-}
-
-function optionPriceFromSelectionMap(itemId, selectionMap) {
-  const groups = cloneOptionGroups(itemId);
-  const byId = optionGroupsById(groups);
-  return Object.entries(selectionMap || {}).reduce((sum, [groupId, values]) => {
-    const group = byId.get(groupId);
-    if (!group || !Array.isArray(values)) return sum;
-    const valuesSet = new Set(values.map((value) => String(value)));
-    return sum + (group.items || []).reduce(
-      (groupSum, item) => groupSum + (valuesSet.has(String(item.id)) ? Number(item.priceDelta || 0) : 0),
-      0,
-    );
-  }, 0);
-}
-
 function sanitizeSelection(values, allowedValues) {
   if (!Array.isArray(values)) return [];
   const normalized = [];
@@ -1867,14 +1643,11 @@ function normalizeSandwichOptions(options) {
   const sauces = sanitizeSelection(raw.sauces, SAUCE_OPTION_SET);
   const pickles = sanitizeSelection(raw.pickles, PICKLE_OPTION_SET);
   const paidAddons = sanitizeSelection(raw.paidAddons, PAID_ADDON_IDS);
-  const rawSpiceLevel = String(raw.spiceLevel || '').trim();
-  const spiceLevel = SPICE_LEVEL_SET.has(rawSpiceLevel) ? rawSpiceLevel : '';
   return {
     salads,
     sauces,
     pickles,
     paidAddons,
-    spiceLevel,
   };
 }
 
@@ -1885,7 +1658,6 @@ function copyOptions(options) {
     sauces: [...normalized.sauces],
     pickles: [...normalized.pickles],
     paidAddons: [...normalized.paidAddons],
-    spiceLevel: normalized.spiceLevel,
   };
 }
 
@@ -1911,8 +1683,7 @@ function optionsEqual(a, b) {
     left.salads.join('|') === right.salads.join('|') &&
     left.sauces.join('|') === right.sauces.join('|') &&
     left.pickles.join('|') === right.pickles.join('|') &&
-    left.paidAddons.join('|') === right.paidAddons.join('|') &&
-    left.spiceLevel === right.spiceLevel
+    left.paidAddons.join('|') === right.paidAddons.join('|')
   );
 }
 
@@ -1922,16 +1693,14 @@ function optionPrice(options) {
 }
 
 function lineUnitPrice(line) {
-  if (line?.selectedOptionIds && line?.itemId) {
-    return line.basePrice + optionPriceFromSelectionMap(line.itemId, line.selectedOptionIds);
-  }
   return line.basePrice + optionPrice(line.options);
 }
 
 function computeMenuItemPricing(item) {
+  const options = item.isSandwich ? readSandwichOptionsFromMenu(item.id) : null;
+  const { addonModifier } = optionModifiers(options);
   const basePrice = item.price;
-  const addonModifier = 0;
-  const finalPrice = basePrice;
+  const finalPrice = basePrice + addonModifier;
   return { basePrice, addonModifier, finalPrice };
 }
 
@@ -1959,478 +1728,6 @@ function createLineId() {
 
 function menuNodeById(itemId) {
   return document.querySelector(`#menu [data-item-id="${itemId}"]`);
-}
-
-function isProductCustomizerOpen() {
-  return !!ui.productCustomizer.modal?.classList.contains('show');
-}
-
-function lockBodyScrollForProductCustomizer() {
-  customizerLockedScrollY = window.scrollY || 0;
-  customizerLastFocused = document.activeElement instanceof HTMLElement
-    ? document.activeElement
-    : null;
-  document.body.classList.add('product-customizer-open');
-  document.body.style.top = `-${customizerLockedScrollY}px`;
-}
-
-function unlockBodyScrollForProductCustomizer() {
-  document.body.classList.remove('product-customizer-open');
-  document.body.style.top = '';
-  window.scrollTo(0, customizerLockedScrollY);
-  customizerLockedScrollY = 0;
-}
-
-function closeProductCustomizerModal({ restoreFocus = true } = {}) {
-  if (!ui.productCustomizer.modal) return;
-  ui.productCustomizer.modal.classList.remove('show');
-  ui.productCustomizer.modal.setAttribute('hidden', '');
-  unlockBodyScrollForProductCustomizer();
-  ui.productCustomizer.activeItemId = null;
-  ui.productCustomizer.activeLineId = null;
-
-  if (restoreFocus && customizerLastFocused) {
-    customizerLastFocused.focus({ preventScroll: true });
-  }
-}
-
-function productCustomizerGroupsById() {
-  return optionGroupsById(ui.productCustomizer.optionGroups || []);
-}
-
-function getInitialSelectionMapForItem(itemId, groups, baseLine = null) {
-  if (baseLine) {
-    return selectionMapFromLine(baseLine, groups);
-  }
-
-  if (state.lastCustomization[itemId] && typeof state.lastCustomization[itemId] === 'object') {
-    return normalizeSelectionMapForGroups(state.lastCustomization[itemId], groups);
-  }
-
-  if (isSandwichItem(itemId) && state.lastOptions[itemId]) {
-    return normalizeSelectionMapForGroups(
-      selectionMapFromLegacyOptions(state.lastOptions[itemId]),
-      groups,
-    );
-  }
-
-  if (isDrinkItem(itemId) && state.lastDrinkType[itemId]) {
-    return normalizeSelectionMapForGroups(
-      { [DRINK_TYPE_GROUP_ID]: [state.lastDrinkType[itemId]] },
-      groups,
-    );
-  }
-
-  return defaultSelectionMapFromGroups(groups);
-}
-
-function persistLastCustomization(itemId, selectionMap) {
-  state.lastCustomization[itemId] = { ...selectionMap };
-
-  if (isSandwichItem(itemId)) {
-    state.lastOptions[itemId] = selectionMapToLegacyOptions(selectionMap);
-  }
-
-  if (isDrinkItem(itemId)) {
-    const drinkType = Array.isArray(selectionMap[DRINK_TYPE_GROUP_ID])
-      ? sanitizeDrinkType(selectionMap[DRINK_TYPE_GROUP_ID][0] || '')
-      : '';
-    state.lastDrinkType[itemId] = drinkType;
-  }
-}
-
-function renderProductCustomizerSections() {
-  const modalState = ui.productCustomizer;
-  if (!modalState.sections) return;
-
-  const sectionsMarkup = modalState.optionGroups
-    .map((group) => {
-      const selectedIds = Array.isArray(modalState.selectionMap[group.id])
-        ? modalState.selectionMap[group.id]
-        : [];
-      const selectedSet = new Set(selectedIds.map((value) => String(value)));
-      const type = group.type === GROUP_SINGLE ? 'radio' : 'checkbox';
-      const inputName = `customizer-${group.id}`;
-      const optionsMarkup = (group.items || [])
-        .map((item) => {
-          const priceDelta = Number(item.priceDelta || 0);
-          const checked = selectedSet.has(String(item.id)) ? 'checked' : '';
-          const suffix = priceDelta > 0 ? ` (+${toShekel(priceDelta)})` : '';
-          return `
-            <label class="shawarma-chip">
-              <input
-                class="chip-input customizer-choice"
-                type="${type}"
-                name="${escapeHtml(inputName)}"
-                data-group-id="${escapeHtml(group.id)}"
-                data-item-id="${escapeHtml(item.id)}"
-                ${checked}
-              />
-              <span class="chip-label">${escapeHtml(item.labelHe)}${escapeHtml(suffix)}</span>
-            </label>
-          `;
-        })
-        .join('');
-
-      return `
-        <section class="shawarma-group customizer-group" data-group-section="${escapeHtml(group.id)}">
-          <div class="shawarma-group-head">
-            <div class="option-label">${escapeHtml(group.titleHe)}</div>
-            <div class="option-hint">${escapeHtml(groupHelperText(group))}</div>
-          </div>
-          <div class="checks-wrap">${optionsMarkup}</div>
-          <p class="customizer-group-error" data-group-error="${escapeHtml(group.id)}" hidden></p>
-        </section>
-      `;
-    })
-    .join('');
-
-  modalState.sections.innerHTML = sectionsMarkup;
-}
-
-function syncProductCustomizerState() {
-  const modalState = ui.productCustomizer;
-  if (!modalState.modal || !modalState.activeItemId) return;
-
-  const item = itemsById.get(modalState.activeItemId);
-  if (!item) return;
-
-  const normalizedMap = normalizeSelectionMapForGroups(
-    modalState.selectionMap,
-    modalState.optionGroups,
-  );
-  modalState.selectionMap = normalizedMap;
-
-  const validation = validateSelectionMap(normalizedMap, modalState.optionGroups);
-  modalState.optionGroups.forEach((group) => {
-    const errorNode = modalState.modal.querySelector(
-      `[data-group-error="${group.id}"]`,
-    );
-    if (!errorNode) return;
-    const errorMessage = validation.errors[group.id] || '';
-    errorNode.textContent = errorMessage;
-    errorNode.hidden = !errorMessage;
-  });
-
-  const quantity = Math.max(1, Math.floor(Number(modalState.quantity) || 1));
-  modalState.quantity = quantity;
-  if (modalState.quantityDisplay) {
-    modalState.quantityDisplay.textContent = String(quantity);
-  }
-  if (modalState.qtyMinusButton) {
-    modalState.qtyMinusButton.disabled = quantity <= 1;
-  }
-
-  const unitPrice = item.price + optionPriceFromSelectionMap(item.id, normalizedMap);
-  const totalPrice = unitPrice * quantity;
-  if (modalState.totalLabel) {
-    modalState.totalLabel.textContent = toShekel(totalPrice);
-  }
-  if (modalState.submitButton) {
-    modalState.submitButton.disabled = !validation.isValid;
-  }
-}
-
-function applyProductCustomizationFromModal() {
-  const modalState = ui.productCustomizer;
-  const item = itemsById.get(modalState.activeItemId);
-  if (!item) return;
-
-  const normalizedSelectionMap = normalizeSelectionMapForGroups(
-    modalState.selectionMap,
-    modalState.optionGroups,
-  );
-  const validation = validateSelectionMap(normalizedSelectionMap, modalState.optionGroups);
-  if (!validation.isValid) {
-    syncProductCustomizerState();
-    return;
-  }
-
-  const selectedOptions = buildSelectedOptionsFromSelectionMap(
-    modalState.optionGroups,
-    normalizedSelectionMap,
-  );
-  const drinkType = item.isDrink
-    ? sanitizeDrinkType(
-      Array.isArray(normalizedSelectionMap[DRINK_TYPE_GROUP_ID])
-        ? normalizedSelectionMap[DRINK_TYPE_GROUP_ID][0] || ''
-        : '',
-    )
-    : '';
-  if (item.isDrink && !drinkType) {
-    showToast('חייבים לבחור סוג שתייה', 1600);
-    return;
-  }
-
-  persistLastCustomization(item.id, normalizedSelectionMap);
-
-  const quantity = Math.max(1, Math.floor(Number(modalState.quantity) || 1));
-  const note = typeof modalState.noteInput?.value === 'string'
-    ? modalState.noteInput.value.trim()
-    : '';
-  const normalizedLine = {
-    lineId: modalState.mode === 'edit' && modalState.activeLineId
-      ? modalState.activeLineId
-      : createLineId(),
-    itemId: item.id,
-    name: item.name,
-    baseName: item.name,
-    displayName: item.name,
-    category: item.isDrink ? DRINK_CATEGORY_LABEL : '',
-    drinkType,
-    basePrice: item.price,
-    quantity,
-    options: item.isSandwich ? selectionMapToLegacyOptions(normalizedSelectionMap) : null,
-    selectedOptionIds: normalizedSelectionMap,
-    selectedOptions,
-    note,
-  };
-
-  if (modalState.mode === 'edit' && modalState.activeLineId) {
-    const lineIndex = state.cartLines.findIndex((line) => line.lineId === modalState.activeLineId);
-    if (lineIndex >= 0) {
-      state.cartLines[lineIndex] = normalizeCartLineForState(normalizedLine);
-    }
-  } else {
-    const duplicate = state.cartLines.find((line) =>
-      line.itemId === item.id &&
-      line.note.trim() === note &&
-      lineSelectionSignature(line) === selectionMapSignature(normalizedSelectionMap, modalState.optionGroups) &&
-      sanitizeDrinkType(line.drinkType) === sanitizeDrinkType(drinkType));
-    if (duplicate) {
-      duplicate.quantity += quantity;
-    } else {
-      state.cartLines.push(normalizeCartLineForState(normalizedLine));
-    }
-  }
-
-  mergeDuplicateLines();
-  saveState();
-  renderCart();
-  closeProductCustomizerModal();
-}
-
-function normalizeCartLineForState(line) {
-  const item = itemsById.get(line.itemId);
-  if (!item) return line;
-  const groups = cloneOptionGroups(item.id);
-  const selectedOptionIds = normalizeSelectionMapForGroups(line.selectedOptionIds || {}, groups);
-  const selectedOptions = buildSelectedOptionsFromSelectionMap(groups, selectedOptionIds);
-  const drinkType = item.isDrink
-    ? sanitizeDrinkType(
-      Array.isArray(selectedOptionIds[DRINK_TYPE_GROUP_ID])
-        ? selectedOptionIds[DRINK_TYPE_GROUP_ID][0] || line.drinkType || ''
-        : line.drinkType || '',
-    )
-    : '';
-  return {
-    ...line,
-    quantity: Math.max(1, Math.floor(Number(line.quantity) || 1)),
-    selectedOptionIds,
-    selectedOptions,
-    drinkType,
-    unitPrice: item.price + optionPriceFromSelectionMap(item.id, selectedOptionIds),
-    options: item.isSandwich ? selectionMapToLegacyOptions(selectedOptionIds) : null,
-  };
-}
-
-function openProductCustomizer(itemId, { mode = 'add', lineId = null } = {}) {
-  const item = itemsById.get(itemId);
-  if (!item || !ui.productCustomizer.modal) return;
-  if (cartPanel?.classList.contains('open')) {
-    closeMobileCart({ restoreFocus: false });
-  }
-
-  const baseLine =
-    mode === 'edit' && lineId
-      ? state.cartLines.find((entry) => entry.lineId === lineId) || null
-      : null;
-  const optionGroups = cloneOptionGroups(item.id);
-  const selectionMap = getInitialSelectionMapForItem(item.id, optionGroups, baseLine);
-  const note = baseLine?.note || '';
-  const quantity = Math.max(1, Number(baseLine?.quantity || 1));
-
-  const menuNode = menuNodeById(item.id);
-  const imageNode = menuNode?.querySelector('.menu-thumb');
-
-  ui.productCustomizer.activeItemId = item.id;
-  ui.productCustomizer.activeLineId = lineId;
-  ui.productCustomizer.mode = mode;
-  ui.productCustomizer.optionGroups = optionGroups;
-  ui.productCustomizer.selectionMap = selectionMap;
-  ui.productCustomizer.quantity = quantity;
-
-  if (ui.productCustomizer.title) {
-    ui.productCustomizer.title.textContent = item.name;
-  }
-  if (ui.productCustomizer.image) {
-    ui.productCustomizer.image.src = imageNode?.getAttribute('src') || '';
-    ui.productCustomizer.image.alt = imageNode?.getAttribute('alt') || item.name;
-  }
-  if (ui.productCustomizer.noteInput) {
-    ui.productCustomizer.noteInput.value = note;
-  }
-  if (ui.productCustomizer.submitButton) {
-    ui.productCustomizer.submitButton.textContent =
-      mode === 'edit' ? 'שמירת שינויים' : 'הוספה לסל';
-  }
-
-  renderProductCustomizerSections();
-  syncProductCustomizerState();
-
-  ui.productCustomizer.modal.classList.add('show');
-  ui.productCustomizer.modal.removeAttribute('hidden');
-  lockBodyScrollForProductCustomizer();
-}
-
-function openProductCustomizerForItem(itemId) {
-  openProductCustomizer(itemId, { mode: 'add', lineId: null });
-}
-
-function openProductCustomizerForLine(lineId) {
-  const line = state.cartLines.find((entry) => entry.lineId === lineId);
-  if (!line) return;
-  openProductCustomizer(line.itemId, { mode: 'edit', lineId: line.lineId });
-}
-
-function buildProductCustomizerModal() {
-  const modal = document.createElement('div');
-  modal.className = 'modal-overlay product-customizer-overlay';
-  modal.id = 'productCustomizerModal';
-  modal.hidden = true;
-  modal.innerHTML = `
-    <div class="modal-card product-customizer-card" role="dialog" aria-modal="true" aria-labelledby="productCustomizeTitle">
-      <header class="product-customizer-head">
-        <h3 id="productCustomizeTitle"></h3>
-        <button type="button" class="product-customizer-close" id="productCustomizeClose" aria-label="סגירה">&times;</button>
-      </header>
-      <div class="product-customizer-body">
-        <img class="product-customizer-image" id="productCustomizeImage" alt="" loading="lazy" />
-        <div id="productCustomizeSections"></div>
-        <label for="productCustomizeNote">הערות</label>
-        <textarea id="productCustomizeNote" placeholder="בלי בצל, לחתוך לחצי, רוטב בצד..."></textarea>
-      </div>
-      <footer class="product-customizer-sticky">
-        <div class="product-customizer-qty">
-          <button type="button" class="qty-btn" id="productCustomizeQtyMinus">-</button>
-          <span class="qty-display" id="productCustomizeQty">1</span>
-          <button type="button" class="qty-btn" id="productCustomizeQtyPlus">+</button>
-        </div>
-        <div class="product-customizer-total">
-          <span>סה"כ</span>
-          <strong id="productCustomizeTotal">₪0</strong>
-        </div>
-        <button type="button" class="btn" id="productCustomizeSubmit">הוספה לסל</button>
-      </footer>
-    </div>
-  `;
-  document.body.append(modal);
-
-  ui.productCustomizer.modal = modal;
-  ui.productCustomizer.closeButton = modal.querySelector('#productCustomizeClose');
-  ui.productCustomizer.title = modal.querySelector('#productCustomizeTitle');
-  ui.productCustomizer.image = modal.querySelector('#productCustomizeImage');
-  ui.productCustomizer.sections = modal.querySelector('#productCustomizeSections');
-  ui.productCustomizer.noteInput = modal.querySelector('#productCustomizeNote');
-  ui.productCustomizer.quantityDisplay = modal.querySelector('#productCustomizeQty');
-  ui.productCustomizer.qtyMinusButton = modal.querySelector('#productCustomizeQtyMinus');
-  ui.productCustomizer.qtyPlusButton = modal.querySelector('#productCustomizeQtyPlus');
-  ui.productCustomizer.totalLabel = modal.querySelector('#productCustomizeTotal');
-  ui.productCustomizer.submitButton = modal.querySelector('#productCustomizeSubmit');
-
-  ui.productCustomizer.closeButton?.addEventListener('click', () => {
-    closeProductCustomizerModal();
-  });
-  modal.addEventListener('click', (event) => {
-    if (event.target === modal) closeProductCustomizerModal();
-  });
-  ui.productCustomizer.noteInput?.addEventListener('input', () => {
-    syncProductCustomizerState();
-  });
-  ui.productCustomizer.qtyMinusButton?.addEventListener('click', () => {
-    ui.productCustomizer.quantity = Math.max(1, ui.productCustomizer.quantity - 1);
-    syncProductCustomizerState();
-  });
-  ui.productCustomizer.qtyPlusButton?.addEventListener('click', () => {
-    ui.productCustomizer.quantity = Math.min(99, ui.productCustomizer.quantity + 1);
-    syncProductCustomizerState();
-  });
-  ui.productCustomizer.submitButton?.addEventListener('click', applyProductCustomizationFromModal);
-  ui.productCustomizer.sections?.addEventListener('change', (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLInputElement)) return;
-    if (!target.classList.contains('customizer-choice')) return;
-    const groupId = String(target.dataset.groupId || '').trim();
-    const itemId = String(target.dataset.itemId || '').trim();
-    if (!groupId || !itemId) return;
-
-    const groupsMap = productCustomizerGroupsById();
-    const group = groupsMap.get(groupId);
-    if (!group) return;
-    const nextMap = {
-      ...ui.productCustomizer.selectionMap,
-      [groupId]: Array.isArray(ui.productCustomizer.selectionMap[groupId])
-        ? [...ui.productCustomizer.selectionMap[groupId]]
-        : [],
-    };
-    const current = nextMap[groupId];
-
-    if (group.type === GROUP_SINGLE) {
-      nextMap[groupId] = target.checked ? [itemId] : [];
-    } else {
-      if (target.checked) {
-        if (!current.includes(itemId)) current.push(itemId);
-      } else {
-        const idx = current.indexOf(itemId);
-        if (idx >= 0) current.splice(idx, 1);
-      }
-      const { max } = groupSelectionLimits(group);
-      if (Number.isFinite(max) && current.length > max) {
-        target.checked = false;
-        current.splice(current.indexOf(itemId), 1);
-        showToast(`בחרו עד ${max}`, 1300);
-      }
-      nextMap[groupId] = current;
-    }
-
-    ui.productCustomizer.selectionMap = nextMap;
-    syncProductCustomizerState();
-  });
-}
-
-function injectProductCustomizerStyles() {
-  if (document.getElementById('productCustomizerStyles')) return;
-  const styleTag = document.createElement('style');
-  styleTag.id = 'productCustomizerStyles';
-  styleTag.textContent = `
-    .menu-customize-row { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; width: 100%; }
-    .menu-customize-btn { white-space: nowrap; border-radius: 999px; }
-    .menu-item-clickable { cursor: pointer; }
-    .menu-item-clickable:focus-visible { outline: none; box-shadow: var(--focus); }
-    .product-customizer-overlay { display: flex; opacity: 0; pointer-events: none; transition: opacity 180ms ease; z-index: 95; }
-    .product-customizer-overlay.show { opacity: 1; pointer-events: auto; }
-    .product-customizer-card { width: min(660px, 96vw); max-height: 92vh; padding: 0; display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; transform: translateY(12px); transition: transform 180ms ease; }
-    .product-customizer-overlay.show .product-customizer-card { transform: translateY(0); }
-    .product-customizer-head { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; padding: 0.85rem 1rem; border-bottom: 1px solid #eadfd3; }
-    .product-customizer-head h3 { margin: 0; font-size: 1.05rem; }
-    .product-customizer-close { border: 1px solid #dfcbb6; background: #fff; color: var(--accent); width: 2rem; height: 2rem; border-radius: 999px; font-size: 1.15rem; line-height: 1; cursor: pointer; }
-    .product-customizer-body { overflow-y: auto; padding: 1rem; display: grid; gap: 0.75rem; }
-    .product-customizer-image { width: 100%; max-height: 220px; object-fit: cover; border-radius: 14px; border: 1px solid #eadfd3; background: #fff8f1; }
-    .customizer-group-error { margin: 0; min-height: 1.2rem; color: #9b2f2f; font-size: 0.84rem; }
-    .product-customizer-sticky { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.75rem; border-top: 1px solid #eadfd3; padding: 0.75rem 1rem calc(env(safe-area-inset-bottom) + 0.75rem); background: var(--card); position: sticky; bottom: 0; }
-    .product-customizer-qty { display: inline-flex; align-items: center; gap: 0.45rem; }
-    .product-customizer-total { display: inline-flex; align-items: baseline; justify-content: center; gap: 0.4rem; color: var(--accent); font-weight: 700; }
-    body.product-customizer-open { position: fixed; width: 100%; left: 0; right: 0; overflow: hidden; }
-    @media (max-width: 900px), (hover: none) and (pointer: coarse) {
-      .product-customizer-overlay { padding: 0; align-items: stretch; }
-      .product-customizer-card { width: 100vw; max-height: 100dvh; border-radius: 0; height: 100dvh; }
-      .product-customizer-image { max-height: 180px; }
-      .product-customizer-sticky { grid-template-columns: 1fr; justify-items: stretch; }
-      .product-customizer-qty, .product-customizer-total { justify-content: center; }
-      .product-customizer-sticky .btn { width: 100%; justify-content: center; }
-    }
-  `;
-  document.head.append(styleTag);
 }
 
 function nextNativeSelectId(prefix = 'select') {
@@ -3301,18 +2598,32 @@ function buildDrinkTypeSelector(item) {
   return wrapper;
 }
 
-function buildCustomizeButton(item) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'btn menu-customize-btn';
-  button.textContent = 'בחרו אפשרויות';
-  button.setAttribute('aria-label', `בחרו אפשרויות עבור ${item.name}`);
-  button.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    openProductCustomizerForItem(item.id);
-  });
-  return button;
+function buildQuantityControls(item) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'order-controls qty';
+
+  const plusButton = document.createElement('button');
+  plusButton.type = 'button';
+  plusButton.className = 'qty-btn';
+  plusButton.textContent = '+';
+  plusButton.setAttribute('aria-label', `הוסף ${item.name}`);
+
+  const qtyDisplay = document.createElement('span');
+  qtyDisplay.className = 'qty-display';
+  qtyDisplay.id = `qty-${item.id}`;
+  qtyDisplay.textContent = '0';
+
+  const minusButton = document.createElement('button');
+  minusButton.type = 'button';
+  minusButton.className = 'qty-btn';
+  minusButton.textContent = '-';
+  minusButton.setAttribute('aria-label', `הסר ${item.name}`);
+
+  plusButton.addEventListener('click', () => addItemFromMenu(item.id));
+  minusButton.addEventListener('click', () => removeItemFromMenu(item.id));
+
+  wrapper.append(plusButton, qtyDisplay, minusButton);
+  return wrapper;
 }
 
 function attachControlsToMenuItem(item) {
@@ -3321,25 +2632,25 @@ function attachControlsToMenuItem(item) {
   priceElement.classList.add('price-badge');
 
   const actions = document.createElement('div');
-  actions.className = 'menu-item-actions menu-customize-row';
+  actions.className = 'menu-item-actions buy-row';
   priceElement.replaceWith(actions);
-  actions.append(priceElement, buildCustomizeButton(item));
+  actions.append(buildQuantityControls(item), priceElement);
 
-  item.node.classList.add('menu-item-clickable');
-  item.node.setAttribute('role', 'button');
-  if (!item.node.hasAttribute('tabindex')) {
-    item.node.tabIndex = 0;
+  if (item.isSandwich) {
+    item.node.classList.add('menu-item-with-options');
+    const textColumn = item.node.querySelector(':scope > .menu-item-main');
+    if (textColumn) {
+      textColumn.append(buildSandwichOptionsEditor(item.id));
+    }
   }
-  item.node.setAttribute('aria-label', `התאמה אישית עבור ${item.name}`);
-  item.node.addEventListener('click', (event) => {
-    if (event.target.closest('button, a, input, select, textarea, label')) return;
-    openProductCustomizerForItem(item.id);
-  });
-  item.node.addEventListener('keydown', (event) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    openProductCustomizerForItem(item.id);
-  });
+
+  if (item.isDrink) {
+    item.node.classList.add('menu-item-with-options');
+    const textColumn = item.node.querySelector(':scope > .menu-item-main');
+    if (textColumn) {
+      textColumn.append(buildDrinkTypeSelector(item));
+    }
+  }
 }
 
 function getItemQuantity(itemId) {
@@ -3468,24 +2779,13 @@ function sanitizeCartLine(line) {
     typeof line.baseName === 'string' && line.baseName.trim()
       ? line.baseName.trim()
       : item.name;
-  const groups = cloneOptionGroups(item.id);
-  const selectedOptionIds = selectionMapFromLine(line, groups);
-  const selectedOptions = buildSelectedOptionsFromSelectionMap(groups, selectedOptionIds);
-  const drinkTypeFromSelection = Array.isArray(selectedOptionIds[DRINK_TYPE_GROUP_ID])
-    ? selectedOptionIds[DRINK_TYPE_GROUP_ID][0] || ''
-    : '';
-  const drinkType = item.isDrink
-    ? sanitizeDrinkType(drinkTypeFromSelection || line.drinkType || '')
-    : '';
+  const drinkType = item.isDrink ? sanitizeDrinkType(line.drinkType) : '';
   if (item.isDrink && !drinkType) return null;
-  const displayName =
-    typeof line.displayName === 'string' && line.displayName.trim()
+  const displayName = item.isDrink
+    ? `${baseName} — ${drinkType}`
+    : typeof line.displayName === 'string' && line.displayName.trim()
       ? line.displayName.trim()
       : item.name;
-  const legacyOptions = item.isSandwich
-    ? selectionMapToLegacyOptions(selectedOptionIds)
-    : null;
-  const unitPrice = item.price + optionPriceFromSelectionMap(item.id, selectedOptionIds);
 
   return {
     lineId: typeof line.lineId === 'string' ? line.lineId : createLineId(),
@@ -3496,20 +2796,10 @@ function sanitizeCartLine(line) {
     category: item.isDrink ? DRINK_CATEGORY_LABEL : '',
     drinkType,
     basePrice: item.price,
-    unitPrice,
     quantity: Math.floor(quantity),
-    options: legacyOptions,
-    selectedOptionIds,
-    selectedOptions,
+    options: item.isSandwich ? normalizeSandwichOptions(line.options) : null,
     note: typeof line.note === 'string' ? line.note : '',
   };
-}
-
-function lineSelectionSignature(line) {
-  const groups = cloneOptionGroups(line.itemId);
-  if (!groups.length) return '';
-  const normalized = normalizeSelectionMapForGroups(line.selectedOptionIds || {}, groups);
-  return selectionMapSignature(normalized, groups);
 }
 
 function mergeDuplicateLines() {
@@ -3519,7 +2809,7 @@ function mergeDuplicateLines() {
       (candidate) =>
         candidate.itemId === line.itemId &&
         candidate.note.trim() === line.note.trim() &&
-        lineSelectionSignature(candidate) === lineSelectionSignature(line) &&
+        optionsEqual(candidate.options, line.options) &&
         sanitizeDrinkType(candidate.drinkType) === sanitizeDrinkType(line.drinkType),
     );
     if (duplicate) {
@@ -3542,20 +2832,22 @@ function totalFromEntries(entries) {
 }
 
 function optionsSummary(line) {
-  if (!Array.isArray(line.selectedOptions) || line.selectedOptions.length === 0) return '';
-  return line.selectedOptions
-    .map((group) => {
-      const selectedText = (group.selectedItems || [])
-        .map((item) => {
-          const delta = Number(item.priceDelta || 0);
-          return delta > 0
-            ? `${item.labelHe} (+${toShekel(delta)})`
-            : item.labelHe;
-        })
-        .join(', ');
-      return `${group.groupTitleHe}: ${selectedText}`;
-    })
-    .join(' | ');
+  if (!line.options) return '';
+  const options = normalizeSandwichOptions(line.options);
+  const parts = [];
+  if (options.salads.length > 0) parts.push(`סלטים: ${options.salads.join(', ')}`);
+  if (options.sauces.length > 0) parts.push(`רטבים: ${options.sauces.join(', ')}`);
+  if (options.pickles.length > 0) parts.push(`חמוצים: ${options.pickles.join(', ')}`);
+  if (options.paidAddons.length > 0) {
+    const paidText = options.paidAddons
+      .map((addonId) => {
+        const addon = PAID_ADDON_BY_ID.get(addonId);
+        return addon ? `${addon.label} (+${toShekel(addon.price)})` : addonId;
+      })
+      .join(', ');
+    parts.push(`תוספות בתשלום: ${paidText}`);
+  }
+  return parts.join(' | ');
 }
 
 function escapeHtml(value) {
@@ -3591,6 +2883,12 @@ function renderCart() {
   state.cartLines = entries;
   const total = totalFromEntries(entries);
   const itemCount = getCartItemCount(entries);
+
+  menuNodes.forEach((node) => {
+    const itemId = node.dataset.itemId;
+    const qtyDisplay = document.getElementById(`qty-${itemId}`);
+    if (qtyDisplay) qtyDisplay.textContent = String(getItemQuantity(itemId));
+  });
 
   cartItemsElement.innerHTML = '';
   cartEmptyElement.style.display = entries.length === 0 ? 'block' : 'none';
@@ -3643,7 +2941,6 @@ function serializeState() {
     pickup: state.pickup,
     lastOptions: state.lastOptions,
     lastDrinkType: state.lastDrinkType,
-    lastCustomization: state.lastCustomization,
   };
 }
 
@@ -3705,10 +3002,6 @@ function restoreState() {
       parsed.lastDrinkType && typeof parsed.lastDrinkType === 'object'
         ? parsed.lastDrinkType
         : {};
-    state.lastCustomization =
-      parsed.lastCustomization && typeof parsed.lastCustomization === 'object'
-        ? parsed.lastCustomization
-        : {};
   } catch {
     state.cartLines = [];
   }
@@ -3735,22 +3028,35 @@ function clearDraftStorage() {
 }
 
 function resetMenuSelectionsToDefault() {
+  const menuRoot = document.getElementById('menu');
+  if (menuRoot) {
+    menuRoot
+      .querySelectorAll('input[type="checkbox"], input[type="radio"]')
+      .forEach((input) => {
+        input.checked = false;
+      });
+    menuRoot.querySelectorAll('select').forEach((select) => {
+      select.selectedIndex = 0;
+      syncStyledSelect(select);
+    });
+  }
+
   itemsById.forEach((item) => {
-    const groups = cloneOptionGroups(item.id);
-    const defaultSelectionMap = defaultSelectionMapFromGroups(groups);
-    state.lastCustomization[item.id] = defaultSelectionMap;
-
     if (item.isSandwich) {
-      state.lastOptions[item.id] = selectionMapToLegacyOptions(defaultSelectionMap);
+      const defaults = copyOptions(DEFAULT_SANDWICH_OPTIONS);
+      state.lastOptions[item.id] = defaults;
+      const optionsRoot = menuNodeById(item.id)?.querySelector('.shawarma-options');
+      applySandwichSelections(optionsRoot, defaults);
     }
-
     if (item.isDrink) {
-      const selectedDrinkType = Array.isArray(defaultSelectionMap[DRINK_TYPE_GROUP_ID])
-        ? defaultSelectionMap[DRINK_TYPE_GROUP_ID][0] || ''
-        : '';
-      state.lastDrinkType[item.id] = sanitizeDrinkType(selectedDrinkType);
+      state.lastDrinkType[item.id] = '';
+      const select = menuNodeById(item.id)?.querySelector('.drink-type-select');
+      if (select) {
+        select.value = '';
+        syncStyledSelect(select);
+      }
+      clearDrinkError(item.id);
     }
-
     updateMenuItemPrice(item.id);
   });
 }
@@ -3760,7 +3066,6 @@ function resetAllSelections() {
   if (ui.lineEditor.modal) closeModal(ui.lineEditor.modal);
   if (ui.confirmModal.modal) closeModal(ui.confirmModal.modal);
   if (ui.drinkChangeModal.modal) closeModal(ui.drinkChangeModal.modal);
-  if (ui.productCustomizer.modal) closeProductCustomizerModal({ restoreFocus: false });
   ui.drinkChangeModal.pending = null;
 
   state.cartLines = [];
@@ -3770,7 +3075,6 @@ function resetAllSelections() {
   state.pickup = '';
   state.lastOptions = {};
   state.lastDrinkType = {};
-  state.lastCustomization = {};
   formErrorElement.textContent = '';
 
   resetMenuSelectionsToDefault();
@@ -3948,22 +3252,20 @@ function validateOrder() {
 }
 
 function buildItemModifiers(line) {
-  const selectedOptions = Array.isArray(line.selectedOptions)
-    ? line.selectedOptions.map((group) => ({
-      groupId: group.groupId,
-      groupTitleHe: group.groupTitleHe,
-      selectedItems: (group.selectedItems || []).map((item) => ({
-        id: item.id,
-        labelHe: item.labelHe,
-        priceDelta: Number(item.priceDelta || 0),
-      })),
-    }))
-    : [];
+  if (line.drinkType) {
+    return { drinkType: line.drinkType };
+  }
+  if (!line.options) return {};
 
+  const options = normalizeSandwichOptions(line.options);
   return {
-    drinkType: line.drinkType || '',
-    selectedOptions,
-    notes: line.note || '',
+    salads: [...options.salads],
+    sauces: [...options.sauces],
+    pickles: [...options.pickles],
+    paidAddons: options.paidAddons
+      .map((addonId) => PAID_ADDON_BY_ID.get(addonId))
+      .filter(Boolean)
+      .map((addon) => ({ id: addon.id, label: addon.label, price: addon.price })),
   };
 }
 
@@ -4278,12 +3580,85 @@ function buildCartReminderModal() {
 }
 
 function openLineEditor(lineId) {
-  openProductCustomizerForLine(lineId);
+  const line = state.cartLines.find((entry) => entry.lineId === lineId);
+  if (!line) return;
+
+  ui.lineEditor.editingLineId = lineId;
+  ui.lineEditor.noteInput.value = line.note;
+  ui.lineEditor.content.innerHTML = '';
+
+  if (isSandwichItem(line.itemId)) {
+    const options = normalizeSandwichOptions(line.options);
+    ui.lineEditor.content.innerHTML = `
+      <div class="shawarma-options modal-options-grid">
+        ${renderOptionGroup({
+          title: 'סלטים',
+          hint: 'בחרו כמה שתרצו',
+          groupKey: 'salads',
+          groupClass: 'salad-choice',
+          options: SALAD_OPTIONS,
+          selectedValues: options.salads,
+          includeAllOption: true,
+        })}
+        ${renderOptionGroup({
+          title: 'רטבים',
+          hint: 'בחרו כמה שתרצו',
+          groupKey: 'sauces',
+          groupClass: 'sauce-choice',
+          options: SAUCE_OPTIONS,
+          selectedValues: options.sauces,
+          includeAllOption: true,
+        })}
+        ${renderOptionGroup({
+          title: 'חמוצים',
+          hint: 'בחרו כמה שתרצו',
+          groupKey: 'pickles',
+          groupClass: 'pickle-choice',
+          options: PICKLE_OPTIONS,
+          selectedValues: options.pickles,
+          includeAllOption: true,
+        })}
+        ${renderOptionGroup({
+          title: 'תוספות בתשלום',
+          hint: 'בחירה תשפיע על המחיר',
+          groupKey: 'paidAddons',
+          groupClass: 'paid-addon',
+          options: PAID_ADDONS,
+          selectedValues: options.paidAddons,
+          withPrice: true,
+        })}
+      </div>
+    `;
+    initGroupAllBehavior(ui.lineEditor.content.querySelector('.shawarma-options'));
+  } else {
+    ui.lineEditor.content.innerHTML =
+      '<p class="field-hint">לפריט זה אין אפשרויות נוספות. ניתן לעדכן הערה בלבד.</p>';
+  }
+
+  openModal(ui.lineEditor.modal);
 }
 
 function saveLineEditor() {
-  // Kept for backwards compatibility with older click bindings.
-  if (ui.lineEditor.modal) closeModal(ui.lineEditor.modal);
+  const line = state.cartLines.find(
+    (entry) => entry.lineId === ui.lineEditor.editingLineId,
+  );
+  if (!line) return;
+
+  if (isSandwichItem(line.itemId)) {
+    line.options = readSandwichOptionsFromRoot(ui.lineEditor.content);
+    state.lastOptions[line.itemId] = copyOptions(line.options);
+    const menuEditor = menuNodeById(line.itemId)?.querySelector('.shawarma-options');
+    if (menuEditor) {
+      applySandwichSelections(menuEditor, line.options);
+      updateMenuItemPrice(line.itemId);
+    }
+  }
+
+  line.note = ui.lineEditor.noteInput.value || '';
+  mergeDuplicateLines();
+  saveState();
+  renderCart();
+  closeModal(ui.lineEditor.modal);
 }
 
 function renderConfirmContent(entries, total) {
@@ -4453,29 +3828,12 @@ function initItems() {
   state.cartLines = state.cartLines.map((line) => sanitizeCartLine(line)).filter(Boolean);
   mergeDuplicateLines();
 
-  const inlineChoiceBoard = document.querySelector('#menu .choice-board');
-  if (inlineChoiceBoard) {
-    const boardCategory = inlineChoiceBoard.closest('.menu-category');
-    boardCategory?.remove();
-  }
-  const menuNote = document.querySelector('#menu .menu-note');
-  if (menuNote) {
-    menuNote.textContent = 'בחרו מוצר, פתחו התאמה אישית והוסיפו לסל.';
-  }
-
   itemsById.forEach((item) => {
-    const groups = cloneOptionGroups(item.id);
-    if (!state.lastCustomization[item.id] || typeof state.lastCustomization[item.id] !== 'object') {
-      state.lastCustomization[item.id] = getInitialSelectionMapForItem(item.id, groups);
-    }
     if (item.isSandwich && !state.lastOptions[item.id]) {
-      state.lastOptions[item.id] = selectionMapToLegacyOptions(state.lastCustomization[item.id]);
+      state.lastOptions[item.id] = copyOptions(DEFAULT_SANDWICH_OPTIONS);
     }
     if (item.isDrink && typeof state.lastDrinkType[item.id] !== 'string') {
-      const selectedDrinkType = Array.isArray(state.lastCustomization[item.id]?.[DRINK_TYPE_GROUP_ID])
-        ? state.lastCustomization[item.id][DRINK_TYPE_GROUP_ID][0] || ''
-        : '';
-      state.lastDrinkType[item.id] = sanitizeDrinkType(selectedDrinkType);
+      state.lastDrinkType[item.id] = '';
     }
     attachControlsToMenuItem(item);
     updateMenuItemPrice(item.id);
@@ -4533,10 +3891,6 @@ function bindFormEvents() {
   mobileCartCloseButton?.addEventListener('click', () => closeMobileCart());
   mobileCartBackdrop?.addEventListener('click', closeMobileCart);
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && isProductCustomizerOpen()) {
-      closeProductCustomizerModal();
-      return;
-    }
     if (event.key === 'Escape' && isCartReminderModalOpen()) {
       closeCartReminderModal();
       return;
@@ -4560,7 +3914,7 @@ function bindFormEvents() {
     openLineEditor(button.dataset.editLineId);
   });
 
-  ui.lineEditor.saveButton?.addEventListener('click', saveLineEditor);
+  ui.lineEditor.saveButton.addEventListener('click', saveLineEditor);
   ui.confirmModal.sendButton.addEventListener('click', submitOrderFromConfirm);
 }
 
@@ -4580,8 +3934,6 @@ function init() {
   }
   restoreState();
   syncLastOrderLink();
-  injectProductCustomizerStyles();
-  buildProductCustomizerModal();
   buildLineEditorModal();
   buildConfirmModal();
   buildResetAllModal();
